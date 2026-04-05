@@ -13,6 +13,7 @@ def initialise_services(settings) -> Dict[str, Any]:
     from services.voice_pipeline import VoicePipeline
     from services.sticker_service import StickerService
     from services.lesson_planner import LessonPlanner
+    from services.vocab_loader import load_vocab_seed
 
     # LLM
     llm_provider_name = (settings.llm_provider or "mock").lower()
@@ -67,6 +68,14 @@ def initialise_services(settings) -> Dict[str, Any]:
 
     # Lesson planner (Vokabel-Lernlogik)
     lesson_planner = LessonPlanner(settings.database_path)
+
+    # Vokabel-Seed einmalig laden (nur wenn Tabelle leer)
+    try:
+        loaded = load_vocab_seed(settings.database_path)
+        if loaded:
+            logger.info("Vocab seed loaded: %d items.", loaded)
+    except Exception as e:
+        logger.warning("Vocab seed loading failed: %s", e)
 
     router = DialogueRouter(llm_provider=llm, user_repo=user_repo, memory_repo=memory_repo)
 

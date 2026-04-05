@@ -1,7 +1,6 @@
 """Build and configure the Telegram Application."""
 from __future__ import annotations
 import logging
-from pathlib import Path
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -24,8 +23,10 @@ async def build_application(settings: Settings, services: dict) -> Application:
     from bot.handlers.start import handle_start
     from bot.handlers.messages import handle_text
     from bot.handlers.voice import handle_voice
+    from bot.handlers.lesson import handle_lesson
 
     app.add_handler(CommandHandler("start", handle_start, filters=auth_filter))
+    app.add_handler(CommandHandler("lesson", handle_lesson, filters=auth_filter))
     app.add_handler(MessageHandler(auth_filter & filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(auth_filter & filters.VOICE, handle_voice))
 
