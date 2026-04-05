@@ -64,3 +64,34 @@ CREATE TABLE IF NOT EXISTS homework_submissions (
     created_at TEXT DEFAULT (datetime('now')),
     checked INTEGER NOT NULL DEFAULT 0
 );
+
+-- Daily reminder schedule per user
+CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    telegram_id INTEGER NOT NULL,
+    remind_time TEXT NOT NULL,  -- HH:MM (local Berlin time)
+    active INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(user_id)
+);
+
+-- Daily learning streak tracking
+CREATE TABLE IF NOT EXISTS streaks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    last_activity_date TEXT NOT NULL,  -- YYYY-MM-DD
+    current_streak INTEGER NOT NULL DEFAULT 1,
+    longest_streak INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(user_id)
+);
+
+-- Pronunciation attempts log
+CREATE TABLE IF NOT EXISTS pronunciation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    vocab_id INTEGER REFERENCES vocab_items(id),
+    target_text TEXT NOT NULL,
+    spoken_text TEXT,
+    score INTEGER,  -- 0-100
+    created_at TEXT DEFAULT (datetime('now'))
+);

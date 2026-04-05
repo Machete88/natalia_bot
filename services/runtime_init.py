@@ -14,6 +14,7 @@ def initialise_services(settings) -> Dict[str, Any]:
     from services.sticker_service import StickerService
     from services.lesson_planner import LessonPlanner
     from services.vocab_loader import load_vocab_seed
+    from services.streak_service import StreakService
 
     # LLM
     llm_provider_name = (settings.llm_provider or "mock").lower()
@@ -66,10 +67,13 @@ def initialise_services(settings) -> Dict[str, Any]:
     user_repo = UserRepository(settings.database_path)
     memory_repo = MemoryRepository(settings.database_path)
 
-    # Lesson planner (Vokabel-Lernlogik)
+    # Lesson planner
     lesson_planner = LessonPlanner(settings.database_path)
 
-    # Vokabel-Seed einmalig laden (nur wenn Tabelle leer)
+    # Streak service
+    streak_service = StreakService(settings.database_path)
+
+    # Vokabel-Seed einmalig laden
     try:
         loaded = load_vocab_seed(settings.database_path)
         if loaded:
@@ -79,7 +83,6 @@ def initialise_services(settings) -> Dict[str, Any]:
 
     router = DialogueRouter(llm_provider=llm, user_repo=user_repo, memory_repo=memory_repo)
 
-    # Mapping Lehrer -> Voice-ID aus .env
     voice_map = {
         "vitali": settings.voice_id_vitali,
         "dering": settings.voice_id_dering,
@@ -103,4 +106,5 @@ def initialise_services(settings) -> Dict[str, Any]:
         "voice_pipeline": voice_pipeline,
         "sticker_service": sticker_service,
         "lesson_planner": lesson_planner,
+        "streak_service": streak_service,
     }

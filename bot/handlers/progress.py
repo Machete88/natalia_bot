@@ -1,4 +1,4 @@
-"""Handler fuer /progress Befehl - Lernfortschritt anzeigen."""
+"""Handler fuer /progress Befehl - Lernfortschritt inkl. Streak."""
 from __future__ import annotations
 
 import logging
@@ -27,43 +27,57 @@ def _get_vocab_stats(db_path: str, user_id: int) -> dict:
 
         total_vocab = conn.execute("SELECT COUNT(*) as cnt FROM vocab_items").fetchone()["cnt"]
         total_seen = sum(stats.values())
-        return {**stats, "total_vocab": total_vocab, "total_seen": total_seen}
+
+        # Streak
+        streak_row = conn.execute(
+            "SELECT current_streak, longest_streak FROM streaks WHERE user_id=?",
+            (user_id,),
+        ).fetchone()
+        current_streak = streak_row["current_streak"] if streak_row else 0
+        longest_streak = streak_row["longest_streak"] if streak_row else 0
+
+        return {
+            **stats,
+            "total_vocab": total_vocab,
+            "total_seen": total_seen,
+            "current_streak": current_streak,
+            "longest_streak": longest_streak,
+        }
 
 
 PROGRESS_TEMPLATES = {
     "vitali": (
         "\U0001f4ca *Твой прогресс, Наташа!* \U0001f60a\n\n"
-        "\u2728 Новые (ещё не видела): *{new}*\n"
-        "\U0001f504 В процессе (учишь): *{learning}*\n"
+        "\u2728 Новые: *{new}*\n"
+        "\U0001f504 Учишь: *{learning}*\n"
         "\U0001f3c6 Выучила: *{mastered}*\n\n"
-        "Всего слов в базе: *{total_vocab}*\n"
-        "Слов начато: *{total_seen}*\n\n"
+        "Всего слов: *{total_vocab}* | Начато: *{total_seen}*\n\n"
+        "\U0001f525 Стрик: *{current_streak}* дней | Рекорд: *{longest_streak}*\n\n"
         "{motivation}"
     ),
     "dering": (
-        "\U0001f4cb *Статус обучения:*\n\n"
-        "Не начато: *{new}*\n"
-        "В работе: *{learning}*\n"
-        "Освоено: *{mastered}*\n\n"
-        "Всего единиц: *{total_vocab}* | Начато: *{total_seen}*"
+        "\U0001f4cb *Статус:*\n\n"
+        "Не начато: *{new}* | В работе: *{learning}* | Освоено: *{mastered}*\n"
+        "Всего: *{total_vocab}* слов. | Начато: *{total_seen}*\n"
+        "\U0001f525 Стрик: *{current_streak}* / Рекорд: *{longest_streak}*"
     ),
     "imperator": (
         "\U0001f525 *Цифры:*\n\n"
         "Новых: *{new}* | Учишь: *{learning}* | Готово: *{mastered}*\n"
-        "База: *{total_vocab}* слов. Начато: *{total_seen}*.\n\n"
+        "Стрик: *{current_streak}* дн. Рекорд: *{longest_streak}*\n\n"
         "{motivation}"
     ),
 }
 
 MOTIVATION = {
     "vitali": [
-        "Ты молодец! Продолжай в том же духе \U0001f4aa",
-        "Каждое слово — шаг вперёд. Я горжусь тобой! \U0001f31f",
-        "Так держать! Немецкий покорится! \U0001f1e9\U0001f1ea",
+        "Ты молодец! Продолжай \U0001f4aa",
+        "Каждое слово — шаг вперёд! \U0001f31f",
+        "Так держать! \U0001f1e9\U0001f1ea",
     ],
     "imperator": [
         "Двигайся дальше.",
-        "Слова — это сила. Собирай их.",
+        "Слова — это сила.",
         "Прогресс есть. Продолжай.",
     ],
 }
