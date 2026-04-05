@@ -43,6 +43,19 @@ class UserRepository:
                 "UPDATE users SET teacher = ? WHERE id = ?", (teacher, user_id)
             )
 
+    def get_level(self, user_id: int) -> str:
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT language_level FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            return row["language_level"] if row else "beginner"
+
+    def set_level(self, user_id: int, level: str) -> None:
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE users SET language_level = ? WHERE id = ?", (level, user_id)
+            )
+
     def set_preference(self, user_id: int, key: str, value: str) -> None:
         with self._conn() as conn:
             conn.execute(

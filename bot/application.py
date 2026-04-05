@@ -27,14 +27,18 @@ async def build_application(settings: Settings, services: dict) -> Application:
     from bot.handlers.teacher import handle_teacher
     from bot.handlers.progress import handle_progress
     from bot.handlers.homework import handle_homework
+    from bot.handlers.setlevel import handle_setlevel
+    from bot.handlers.quiz import handle_quiz
 
     # Befehle
     app.add_handler(CommandHandler("start", handle_start, filters=auth_filter))
     app.add_handler(CommandHandler("lesson", handle_lesson, filters=auth_filter))
     app.add_handler(CommandHandler("teacher", handle_teacher, filters=auth_filter))
     app.add_handler(CommandHandler("progress", handle_progress, filters=auth_filter))
+    app.add_handler(CommandHandler("setlevel", handle_setlevel, filters=auth_filter))
+    app.add_handler(CommandHandler("quiz", handle_quiz, filters=auth_filter))
 
-    # Nachrichten
+    # Text-Nachrichten (auch Quiz-Antworten 1-4)
     app.add_handler(MessageHandler(auth_filter & filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(auth_filter & filters.VOICE, handle_voice))
 
