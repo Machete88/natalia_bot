@@ -12,12 +12,12 @@ from config.settings import Settings
 logger = logging.getLogger(__name__)
 
 
-async def build_application(settings: Settings, services: dict) -> Application:
+def build_application(settings: Settings, services: dict) -> Application:
+    """Baut und konfiguriert die PTB Application (synchron)."""
     app = Application.builder().token(settings.telegram_bot_token).build()
     app.bot_data["services"] = services
     app.bot_data["settings"] = settings
 
-    # Autorisierte Nutzer (Natalia + Admin/du)
     allowed = {settings.authorized_user_id, settings.admin_user_id}
     auth_filter = filters.User(user_id=list(allowed))
 
@@ -33,7 +33,6 @@ async def build_application(settings: Settings, services: dict) -> Application:
     from bot.handlers.pronunciation import handle_pronounce
     from bot.handlers.support import deactivate_support
 
-    # Befehle
     app.add_handler(CommandHandler("start",      handle_start,       filters=auth_filter))
     app.add_handler(CommandHandler("lesson",     handle_lesson,      filters=auth_filter))
     app.add_handler(CommandHandler("teacher",    handle_teacher,     filters=auth_filter))
@@ -43,13 +42,8 @@ async def build_application(settings: Settings, services: dict) -> Application:
     app.add_handler(CommandHandler("pronounce",  handle_pronounce,   filters=auth_filter))
     app.add_handler(CommandHandler("endsupport", deactivate_support, filters=auth_filter))
 
-    # Text (inkl. Support-Routing)
     app.add_handler(MessageHandler(auth_filter & filters.TEXT & ~filters.COMMAND, handle_text))
-
-    # Stimme (inkl. Support-Forwarding)
     app.add_handler(MessageHandler(auth_filter & filters.VOICE, handle_voice))
-
-    # Hausaufgaben
     app.add_handler(MessageHandler(auth_filter & filters.PHOTO,        handle_homework))
     app.add_handler(MessageHandler(auth_filter & filters.Document.ALL, handle_homework))
 
