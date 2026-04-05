@@ -14,7 +14,6 @@ def initialise_services(settings) -> Dict[str, Any]:
     from services.sticker_service import StickerService
     from services.lesson_planner import LessonPlanner
     from services.vocab_loader import load_vocab_seed
-    from services.streak_service import StreakService
 
     # LLM
     llm_provider_name = (settings.llm_provider or "mock").lower()
@@ -70,10 +69,7 @@ def initialise_services(settings) -> Dict[str, Any]:
     # Lesson planner
     lesson_planner = LessonPlanner(settings.database_path)
 
-    # Streak service
-    streak_service = StreakService(settings.database_path)
-
-    # Vokabel-Seed einmalig laden
+    # Vocab-Seed einmalig laden
     try:
         loaded = load_vocab_seed(settings.database_path)
         if loaded:
@@ -88,13 +84,16 @@ def initialise_services(settings) -> Dict[str, Any]:
         "dering": settings.voice_id_dering,
         "imperator": settings.voice_id_imperator,
     }
-
     voice_pipeline = VoicePipeline(stt=stt, tts=tts, voice_map=voice_map)
 
     sticker_service = StickerService(
         catalog_path="media/stickers/catalog.json",
         sticker_dir="media/stickers",
     )
+
+    # Taeglich-Erinnerungs-Job registrieren (wird von app.main gestartet)
+    reminder_time = getattr(settings, "daily_reminder_time", "09:00")
+    timezone = getattr(settings, "timezone", "Europe/Berlin")
 
     return {
         "llm": llm,
@@ -106,5 +105,6 @@ def initialise_services(settings) -> Dict[str, Any]:
         "voice_pipeline": voice_pipeline,
         "sticker_service": sticker_service,
         "lesson_planner": lesson_planner,
-        "streak_service": streak_service,
+        "reminder_time": reminder_time,
+        "timezone": timezone,
     }
