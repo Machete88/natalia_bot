@@ -12,6 +12,7 @@ def initialise_services(settings) -> Dict[str, Any]:
     from services.dialogue_router import DialogueRouter
     from services.voice_pipeline import VoicePipeline
     from services.sticker_service import StickerService
+    from services.lesson_planner import LessonPlanner
 
     # LLM
     llm_provider_name = (settings.llm_provider or "mock").lower()
@@ -64,6 +65,9 @@ def initialise_services(settings) -> Dict[str, Any]:
     user_repo = UserRepository(settings.database_path)
     memory_repo = MemoryRepository(settings.database_path)
 
+    # Lesson planner (Vokabel-Lernlogik)
+    lesson_planner = LessonPlanner(settings.database_path)
+
     router = DialogueRouter(llm_provider=llm, user_repo=user_repo, memory_repo=memory_repo)
 
     # Mapping Lehrer -> Voice-ID aus .env
@@ -89,4 +93,5 @@ def initialise_services(settings) -> Dict[str, Any]:
         "dialogue_router": router,
         "voice_pipeline": voice_pipeline,
         "sticker_service": sticker_service,
+        "lesson_planner": lesson_planner,
     }
