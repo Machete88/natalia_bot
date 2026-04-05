@@ -1,118 +1,145 @@
-"""Aussprache-Handler: Voice-Nachricht -> Transkription -> Bewertung vs. Zielwort."""
+"""Aussprache-Uebung: Nutzer spricht ein vorgegebenes deutsches Wort."""
 from __future__ import annotations
 
 import logging
-import sqlite3
-import tempfile
 from pathlib import Path
-from difflib import SequenceMatcher
 
 from telegram import Update
 from telegram.ext import ContextTypes
+
+from services.pronunciation import evaluate_pronunciation, format_feedback
 
 logger = logging.getLogger(__name__)
 
 PRONUNCIATION_SESSION_KEY = "pronunciation_target"
 
 
-def _similarity_score(a: str, b: str) -> int:
-    """Einfacher Aehnlichkeitsscore 0-100 (case-insensitive)."""
-    ratio = SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
-    return round(ratio * 100)
-
-
-def _save_pronunciation_log(
-    db_path: str, user_id: int, vocab_id: int | None, target: str, spoken: str, score: int
-) -> None:
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(
-            "INSERT INTO pronunciation_log (user_id, vocab_id, target_text, spoken_text, score) VALUES (?,?,?,?,?)",
-            (user_id, vocab_id, target, spoken, score),
-        )
-
-
-FEEDBACK = {
-    "vitali": {
-        "excellent": "\U0001f3c6 Прекрасно! *{score}%* \u2014 отличное произношение!\n\U0001f1e9\U0001f1ea Цель: *{target}*\n\U0001f3a4 Ты сказала: _{spoken}_",
-        "good": "\U0001f44d Хорошо! *{score}%* \u2014 почти правильно!\n\U0001f1e9\U0001f1ea Цель: *{target}*\n\U0001f3a4 Ты сказала: _{spoken}_\n\nпопробуй ещё раз!",
-        "try_again": "\U0001f4aa Не сдавайся! *{score}%*\n\U0001f1e9\U0001f1ea Цель: *{target}*\n\U0001f3a4 Ты сказала: _{spoken}_\n\nПрочитай медленно и повтори!",
-    },
-    "dering": {
-        "excellent": "\u2705 *{score}%* \u2014 верно. *{target}* / _{spoken}_",
-        "good": "\U0001f4cb *{score}%*. *{target}* / _{spoken}_. Повтори.",
-        "try_again": "\u274c *{score}%*. *{target}* / _{spoken}_. Снова.",
-    },
-    "imperator": {
-        "excellent": "\U0001f525 *{score}%*. *{target}*. \u0425орошо.",
-        "good": "*{score}%*. *{target}* / _{spoken}_.",
-        "try_again": "\u274c *{score}%*. _{spoken}_ \u2260 *{target}*.",
-    },
+PROMPT_MSGS = {
+    "vitali": "\U0001f3a4 Отлично! Теперь скажи по-немецки: *{word}*",
+    "dering": "\U0001f3a4 Произнесите: *{word}*",
+    "imperator": "\U0001f525 Говори: *{word}*",
 }
 
+NO_STT_MSG = (
+    "\U0001f50a Для проверки произношения нужен локальный Whisper.\n"
+    "Установи: `STT_PROVIDER=whisper_local` в .env"
+)
 
-async def start_pronunciation(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, word_de: str, vocab_id: int | None = None
-) -> None:
-    """Setzt Zielwort und fordert Natasha auf zu sprechen."""
+
+async def handle_pronounce(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/pronounce [word] - Startet eine Aussprache-Uebung."""
     services = context.bot_data.get("services", {})
     user_repo = services.get("user_repo")
+    tts = services.get("tts")
+    voice_pipeline = services.get("voice_pipeline")
+    settings = context.bot_data.get("settings")
+
+    if not user_repo:
+        await update.message.reply_text("Сервис недоступен.")
+        return
+
     user = update.effective_user
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
     teacher = user_repo.get_teacher(user_id)
 
-    context.user_data[PRONUNCIATION_SESSION_KEY] = {"word": word_de, "vocab_id": vocab_id}
+    args = context.args
+    if args:
+        word = " ".join(args)
+    else:
+        # Zufaelliges Wort aus Vokabelliste
+        import sqlite3, random
+        if settings:
+            with sqlite3.connect(settings.database_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT word_de FROM vocab_items ORDER BY RANDOM() LIMIT 1"
+                ).fetchone()
+                word = row["word_de"] if row else "Hallo"
+        else:
+            word = "Hallo"
 
-    prompts = {
-        "vitali": f"\U0001f3a4 Теперь произнеси немецкое слово:\n\n*{word_de}*\n\nГовори чётко!",
-        "dering": f"\U0001f3a4 Произнесите: *{word_de}*",
-        "imperator": f"\U0001f3a4 *{word_de}*. Говори.",
-    }
-    prompt = prompts.get(teacher, prompts["vitali"])
+    context.user_data[PRONUNCIATION_SESSION_KEY] = word
+
+    tpl = PROMPT_MSGS.get(teacher, PROMPT_MSGS["vitali"])
+    prompt = tpl.format(word=word)
     await update.message.reply_text(prompt, parse_mode="Markdown")
 
+    # TTS: Lehrer spricht das Wort vor
+    if tts and voice_pipeline:
+        try:
+            voice_map = voice_pipeline.voice_map
+            voice_id = voice_map.get(teacher.lower(), teacher)
+            await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")
+            audio_file = await tts.synthesize(word, voice_id)
+            with open(str(audio_file), "rb") as f:
+                await update.message.reply_voice(voice=f, caption=f"\U0001f1e9\U0001f1ea {word}")
+        except Exception as e:
+            logger.warning("TTS for pronounce failed: %s", e)
 
-async def evaluate_pronunciation(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, transcribed_text: str
-) -> None:
-    """Vergleicht gesprochenen Text mit Zielwort."""
-    session = context.user_data.get(PRONUNCIATION_SESSION_KEY)
-    if not session:
-        return  # Keine aktive Sitzung
+
+async def handle_voice_pronunciation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Wird von voice-handler aufgerufen wenn pronunciation_target aktiv ist.
+    Gibt True zurueck wenn verarbeitet, sonst False.
+    """
+    target_word = context.user_data.get(PRONUNCIATION_SESSION_KEY)
+    if not target_word:
+        return False
 
     services = context.bot_data.get("services", {})
-    settings = context.bot_data.get("settings")
     user_repo = services.get("user_repo")
+    voice_pipeline = services.get("voice_pipeline")
+    settings = context.bot_data.get("settings")
 
     user = update.effective_user
+    if not user_repo:
+        return False
+
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
     teacher = user_repo.get_teacher(user_id)
 
-    target = session["word"]
-    vocab_id = session.get("vocab_id")
-    score = _similarity_score(target, transcribed_text)
+    stt = services.get("stt")
+    from services.stt import MockSTTProvider
+    if isinstance(stt, MockSTTProvider):
+        await update.message.reply_text(NO_STT_MSG)
+        context.user_data.pop(PRONUNCIATION_SESSION_KEY, None)
+        return True
 
-    # In DB loggen
-    if settings:
-        try:
-            _save_pronunciation_log(
-                settings.database_path, user_id, vocab_id, target, transcribed_text, score
-            )
-        except Exception as e:
-            logger.warning("Could not save pronunciation log: %s", e)
+    # Sprachdatei herunterladen
+    try:
+        tg_file = await context.bot.get_file(update.message.voice.file_id)
+        audio_dir = Path("media/audio")
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        local_path = audio_dir / f"pronounce_{user.id}_{update.message.voice.file_unique_id}.ogg"
+        await tg_file.download_to_drive(str(local_path))
+    except Exception as e:
+        logger.error("Pronunciation audio download failed: %s", e)
+        await update.message.reply_text("Не удалось загрузить аудио.")
+        return True
 
-    # Feedback-Kategorie
-    if score >= 85:
-        category = "excellent"
-    elif score >= 60:
-        category = "good"
-    else:
-        category = "try_again"
+    # STT
+    try:
+        recognised = await stt.transcribe(local_path)
+    except Exception as e:
+        logger.error("STT failed: %s", e)
+        await update.message.reply_text("Не удалось распознать речь.")
+        return True
 
-    feedback_tpl = FEEDBACK.get(teacher, FEEDBACK["vitali"]).get(category, "")
-    feedback = feedback_tpl.format(score=score, target=target, spoken=transcribed_text)
+    result = evaluate_pronunciation(target_word, recognised)
+    feedback = format_feedback(result, teacher)
+
+    # Session loeschen
+    context.user_data.pop(PRONUNCIATION_SESSION_KEY, None)
 
     await update.message.reply_text(feedback, parse_mode="Markdown")
 
-    if category == "excellent":
-        context.user_data.pop(PRONUNCIATION_SESSION_KEY, None)
-    # Bei gut/schlecht: Session bleibt, damit Natasha nochmal versuchen kann
+    # Bei gutem Ergebnis naechstes Wort anbieten
+    if result["grade"] in ("perfect", "good"):
+        next_prompt = {
+            "vitali": "\U0001f4aa Браво! Следующее слово? /pronounce",
+            "dering": "Следующее: /pronounce",
+            "imperator": "\U0001f525 Дальше. /pronounce",
+        }
+        await update.message.reply_text(next_prompt.get(teacher, "/pronounce"))
+
+    return True

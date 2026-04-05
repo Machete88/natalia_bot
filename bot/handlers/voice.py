@@ -1,26 +1,35 @@
-"""Voice-Handler: STT -> Pronunciation-Check ODER normaler Dialogue."""
+"""Voice message handler mit Aussprache-Check-Integration."""
 from __future__ import annotations
 
 import logging
-import tempfile
 from pathlib import Path
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.handlers.pronunciation import PRONUNCIATION_SESSION_KEY, evaluate_pronunciation
-
 logger = logging.getLogger(__name__)
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Verarbeitet Sprachnachrichten.
+    - Wenn pronunciation_session aktiv: Aussprache-Bewertung
+    - Sonst: STT -> DialogueRouter -> TTS-Antwort
+    """
+    # Pronunciation-Check zuerst pruefen
+    from bot.handlers.pronunciation import handle_voice_pronunciation
+    handled = await handle_voice_pronunciation(update, context)
+    if handled:
+        return
+
+    # Normaler Voice-Flow
     services = context.bot_data.get("services", {})
+    settings = context.bot_data.get("settings")
+    user_repo = services.get("user_repo")
     voice_pipeline = services.get("voice_pipeline")
     dialogue_router = services.get("dialogue_router")
     tts = services.get("tts")
-    user_repo = services.get("user_repo")
 
-    if not voice_pipeline or not user_repo:
+    if not user_repo or not voice_pipeline:
         await update.message.reply_text("Сервис временно недоступен.")
         return
 
@@ -30,50 +39,44 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     await context.bot.send_chat_action(update.effective_chat.id, action="typing")
 
-    # Voice-Datei herunterladen
     try:
         tg_file = await context.bot.get_file(update.message.voice.file_id)
-        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
-            tmp_path = Path(tmp.name)
-        await tg_file.download_to_drive(str(tmp_path))
+        audio_dir = Path("media/audio")
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        local_path = audio_dir / f"voice_{user.id}_{update.message.voice.file_unique_id}.ogg"
+        await tg_file.download_to_drive(str(local_path))
     except Exception as e:
-        logger.error("Voice download failed: %s", e, exc_info=True)
-        await update.message.reply_text("Не удалось загрузить голосовое сообщение.")
+        logger.error("Voice download failed: %s", e)
+        await update.message.reply_text("Не удалось загрузить аудио.")
         return
 
-    # STT
+    stt = services.get("stt")
     try:
-        transcribed = await voice_pipeline.transcribe(tmp_path)
+        text = await stt.transcribe(local_path)
     except Exception as e:
-        logger.error("STT failed: %s", e, exc_info=True)
-        transcribed = ""
-    finally:
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        logger.warning("STT failed, using placeholder: %s", e)
+        text = "[voice message]"
 
-    if not transcribed:
-        await update.message.reply_text("Не удалось распознать речь.")
+    if not text or text.strip() == "[voice message]":
+        await update.message.reply_text("Не удалось распознать речь. Попробуй ещё раз.")
         return
 
-    # Wenn Aussprache-Session aktiv: Bewertung
-    if context.user_data.get(PRONUNCIATION_SESSION_KEY):
-        await evaluate_pronunciation(update, context, transcribed)
+    # STT-Transkript zeigen
+    await update.message.reply_text(f"\U0001f4dd Распознано: _{text}_", parse_mode="Markdown")
+
+    if not dialogue_router:
         return
 
-    # Normaler Dialogue
     await context.bot.send_chat_action(update.effective_chat.id, action="typing")
     try:
-        response_text = await dialogue_router.route(user_id=user_id, text=transcribed)
+        response_text = await dialogue_router.route(user_id=user_id, text=text)
     except Exception as e:
-        logger.error("DialogueRouter error: %s", e, exc_info=True)
-        response_text = "Произошла ошибка. Попробуй ещё раз."
+        logger.error("DialogueRouter error: %s", e)
+        response_text = "Извини, произошла ошибка."
 
-    # Zeige Transkription + Antwort
-    await update.message.reply_text(f"\U0001f5e3 _{transcribed}_\n\n{response_text}", parse_mode="Markdown")
+    await update.message.reply_text(response_text)
 
-    if tts:
+    if tts and voice_pipeline:
         try:
             voice_map = voice_pipeline.voice_map
             voice_id = voice_map.get(teacher.lower(), teacher)
