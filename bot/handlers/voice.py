@@ -15,15 +15,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     - Wenn pronunciation_session aktiv: Aussprache-Bewertung
     - Sonst: STT -> DialogueRouter -> TTS-Antwort
     """
-    # Pronunciation-Check zuerst pruefen
     from bot.handlers.pronunciation import handle_voice_pronunciation
     handled = await handle_voice_pronunciation(update, context)
     if handled:
         return
 
-    # Normaler Voice-Flow
     services = context.bot_data.get("services", {})
-    settings = context.bot_data.get("settings")
     user_repo = services.get("user_repo")
     voice_pipeline = services.get("voice_pipeline")
     dialogue_router = services.get("dialogue_router")
@@ -61,7 +58,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Не удалось распознать речь. Попробуй ещё раз.")
         return
 
-    # STT-Transkript zeigen
     await update.message.reply_text(f"\U0001f4dd Распознано: _{text}_", parse_mode="Markdown")
 
     if not dialogue_router:
@@ -69,7 +65,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     await context.bot.send_chat_action(update.effective_chat.id, action="typing")
     try:
-        response_text = await dialogue_router.route(user_id=user_id, text=text)
+        result = await dialogue_router.generate_reply(user_id=user_id, user_text=text)
+        response_text = result["text"] if isinstance(result, dict) else str(result)
     except Exception as e:
         logger.error("DialogueRouter error: %s", e)
         response_text = "Извини, произошла ошибка."

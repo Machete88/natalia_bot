@@ -63,7 +63,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await context.bot.send_chat_action(update.effective_chat.id, action="typing")
 
     try:
-        response_text = await dialogue_router.route(user_id=user_id, text=text)
+        result = await dialogue_router.generate_reply(user_id=user_id, user_text=text)
+        response_text = result["text"] if isinstance(result, dict) else str(result)
     except Exception as e:
         logger.error("DialogueRouter error: %s", e, exc_info=True)
         response_text = "Произошла ошибка. Попробуй ещё раз."
