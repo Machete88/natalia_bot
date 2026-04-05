@@ -1,0 +1,22 @@
+[
+  {"level": "c1", "topic": "rhetorik", "word_de": "die Nuance", "word_ru": "нюанс", "example_de": "Das hat viele Nuancen.", "example_ru": "Здесь есть много нюансов."},
+  {"level": "c1", "topic": "rhetorik", "word_de": "implizieren", "word_ru": "подразумевать", "example_de": "Was impliziert das genau?", "example_ru": "Что именно это подразумевает?"},
+  {"level": "c1", "topic": "rhetorik", "word_de": "schlussfolgernd", "word_ru": "делая вывод", "example_de": "Schlussfolgernd lässt sich sagen...", "example_ru": "Подводя итог, можно сказать..."},
+  {"level": "c1", "topic": "rhetorik", "word_de": "in Anbetracht", "word_ru": "учитывая", "example_de": "In Anbetracht der Lage handeln wir.", "example_ru": "Учитывая ситуацию, мы действуем."},
+  {"level": "c1", "topic": "rhetorik", "word_de": "nichtsdestotrotz", "word_ru": "тем не менее", "example_de": "Nichtsdestotrotz mache ich weiter.", "example_ru": "Тем не менее я продолжаю."},
+  {"level": "c1", "topic": "philosophie", "word_de": "die Ambiguität", "word_ru": "двусмысленность", "example_de": "Die Ambiguität des Begriffs ist bekannt.", "example_ru": "Двусмысленность понятия известна."},
+  {"level": "c1", "topic": "philosophie", "word_de": "der Zeitgeist", "word_ru": "дух времени", "example_de": "Der Zeitgeist beeinflusst uns alle.", "example_ru": "Дух времени влияет на всех нас."},
+  {"level": "c1", "topic": "philosophie", "word_de": "paradigmatisch", "word_ru": "парадигматичный", "example_de": "Das ist ein paradigmatisches Beispiel.", "example_ru": "Это парадигматичный пример."},
+  {"level": "c1", "topic": "kultur", "word_de": "das Kulturgut", "word_ru": "культурное достояние", "example_de": "Das Brandenburger Tor ist ein Kulturgut.", "example_ru": "Бранденбургские ворота — культурное достояние."},
+  {"level": "c1", "topic": "kultur", "word_de": "die Prägung", "word_ru": "формирование / отпечаток", "example_de": "Die Prägung durch die Eltern ist stark.", "example_ru": "Влияние родителей очень сильное."},
+  {"level": "c1", "topic": "wissenschaft", "word_de": "die Kausalität", "word_ru": "причинно-следственная связь", "example_de": "Kausalität ist kein Zufall.", "example_ru": "Причинно-следственная связь — это не случайность."},
+  {"level": "c1", "topic": "wissenschaft", "word_de": "die Korrelation", "word_ru": "корреляция", "example_de": "Korrelation bedeutet keine Kausalität.", "example_ru": "Корреляция не означает причинность."},
+  {"level": "c1", "topic": "sprache", "word_de": "das Stilmittel", "word_ru": "стилистическое средство", "example_de": "Metaphern sind wichtige Stilmittel.", "example_ru": "Метафоры — важные стилистические средства."},
+  {"level": "c1", "topic": "sprache", "word_de": "konnotieren", "word_ru": "иметь коннотацию", "example_de": "Das Wort konnotiert Negatives.", "example_ru": "Это слово несёт негативную коннотацию."},
+  {"level": "c1", "topic": "ethik", "word_de": "die Integrитät", "word_ru": "целостность / честность", "example_de": "Integrität ist sehr wichtig.", "example_ru": "Честность очень важна."},
+  {"level": "c1", "topic": "ethik", "word_de": "die Verantwortungsethik", "word_ru": "этика ответственности", "example_de": "Verantwortungsethik betont Konsequenzen.", "example_ru": "Этика ответственности акцентирует последствия."},
+  {"level": "c1", "topic": "wirtschaft", "word_de": "die Synergieeffekte", "word_ru": "синергетический эффект", "example_de": "Synergieeffekte verbessern die Effizienz.", "example_ru": "Синергетический эффект повышает эффективность."},
+  {"level": "c1", "topic": "wirtschaft", "word_de": "der Paradigmenwechsel", "word_ru": "смена парадигмы", "example_de": "Ein Paradigmenwechsel ist nötig.", "example_ru": "Необходима смена парадигмы."},
+  {"level": "c1", "topic": "alltag", "word_de": "beiläufig", "word_ru": "между делом / мимоходом", "example_de": "Er erwähnte es ganz beiläufig.", "example_ru": "Он упомянул это вскользь."},
+  {"level": "c1", "topic": "alltag", "word_de": "ausgerechnet", "word_ru": "именно / как назло", "example_de": "Ausgerechnet heute kommt er.", "example_ru": "Именно сегодня он приходит."}
+]
