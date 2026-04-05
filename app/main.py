@@ -39,44 +39,46 @@ def main() -> None:
     services = initialise_services(settings)
     logger.info("Services initialised.")
 
-    async def run() -> None:
-        app = await build_application(settings, services)
+    # build_application ist async -> kurz awaiten, dann run_polling synchron
+    async def _build():
+        return await build_application(settings, services)
 
-        # Taeglich-Erinnerung
-        try:
-            from datetime import time as dtime
-            from zoneinfo import ZoneInfo
-            from services.reminder import REMINDER_MESSAGES
+    app = asyncio.get_event_loop().run_until_complete(_build())
 
-            hour, minute = map(int, settings.daily_reminder_time.split(":"))
-            tz = ZoneInfo(settings.timezone)
+    # Taeglich-Erinnerung
+    try:
+        from datetime import time as dtime
+        from zoneinfo import ZoneInfo
+        from services.reminder import REMINDER_MESSAGES
 
-            async def reminder_job(context) -> None:
-                user_repo = services.get("user_repo")
-                if not user_repo:
-                    return
-                tg_id = settings.authorized_user_id
-                uid = user_repo.get_or_create_user(int(tg_id), "")
-                teacher = user_repo.get_teacher(uid)
-                msgs = REMINDER_MESSAGES.get(teacher, REMINDER_MESSAGES["vitali"])
-                try:
-                    await context.bot.send_message(chat_id=int(tg_id), text=random.choice(msgs))
-                except Exception as e:
-                    logger.warning("Reminder send failed: %s", e)
+        hour, minute = map(int, settings.daily_reminder_time.split(":"))
+        tz = ZoneInfo(settings.timezone)
 
-            app.job_queue.run_daily(
-                reminder_job,
-                time=dtime(hour=hour, minute=minute, tzinfo=tz),
-                name="daily_reminder",
-            )
-            logger.info("Daily reminder scheduled at %s (%s)", settings.daily_reminder_time, settings.timezone)
-        except Exception as e:
-            logger.warning("Could not schedule daily reminder: %s", e)
+        async def reminder_job(context) -> None:
+            user_repo = services.get("user_repo")
+            if not user_repo:
+                return
+            tg_id = settings.authorized_user_id
+            uid = user_repo.get_or_create_user(int(tg_id), "")
+            teacher = user_repo.get_teacher(uid)
+            msgs = REMINDER_MESSAGES.get(teacher, REMINDER_MESSAGES["vitali"])
+            try:
+                await context.bot.send_message(chat_id=int(tg_id), text=random.choice(msgs))
+            except Exception as e:
+                logger.warning("Reminder send failed: %s", e)
 
-        logger.info("Bot is running. Press Ctrl+C to stop.")
-        await app.run_polling(drop_pending_updates=True)
+        app.job_queue.run_daily(
+            reminder_job,
+            time=dtime(hour=hour, minute=minute, tzinfo=tz),
+            name="daily_reminder",
+        )
+        logger.info("Daily reminder scheduled at %s (%s)", settings.daily_reminder_time, settings.timezone)
+    except Exception as e:
+        logger.warning("Could not schedule daily reminder: %s", e)
 
-    asyncio.run(run())
+    logger.info("Bot is running. Press Ctrl+C to stop.")
+    # run_polling verwaltet seinen eigenen Event Loop - NICHT in asyncio.run aufrufen
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
