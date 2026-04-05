@@ -1,7 +1,8 @@
-"""Voice message handler mit Aussprache-Check-Integration."""
+"""Voice message handler mit Aussprache-Check-Integration und Sprachbefehl-Erkennung."""
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from telegram import Update
@@ -9,10 +10,108 @@ from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Sprachbefehl-Erkennung
+# Schlüsselwörter (Russisch + Deutsch) -> interner Befehlsname
+# ---------------------------------------------------------------------------
+_VOICE_COMMANDS: list[tuple[list[str], str]] = [
+    (["урок", "лексику", "лексика", "словa", "слова", "учить", "lektion", "lesson", "вокабуляр"], "lesson"),
+    (["квиз", "тест", "проверь", "проверка", "quiz", "тестируй"], "quiz"),
+    (["прогресс", "статистика", "статистику", "мой прогресс", "progress"], "progress"),
+    (["учитель", "смени учителя", "другой учитель", "teacher", "витали", "деринг", "император",
+      "vitali", "dering", "imperator"], "teacher"),
+    (["уровень", "мой уровень", "setlevel", "level", "a1", "a2", "b1", "b2", "c1"], "setlevel"),
+    (["напомни", "напоминание", "remind", "erinnerung"], "remind"),
+]
+
+
+def _detect_voice_command(text: str) -> str | None:
+    """Gibt den Befehlsnamen zurück wenn der Text einen Befehl enthält, sonst None."""
+    lower = text.lower()
+    for keywords, cmd in _VOICE_COMMANDS:
+        for kw in keywords:
+            if re.search(r'\b' + re.escape(kw) + r'\b', lower):
+                return cmd
+    return None
+
+
+def _extract_teacher_arg(text: str) -> str | None:
+    """Extrahiert den Lehrernamen aus dem transkribierten Text."""
+    lower = text.lower()
+    for name in ["vitali", "витали"]:
+        if name in lower:
+            return "vitali"
+    for name in ["dering", "деринг"]:
+        if name in lower:
+            return "dering"
+    for name in ["imperator", "император"]:
+        if name in lower:
+            return "imperator"
+    return None
+
+
+def _extract_level_arg(text: str) -> str | None:
+    """Extrahiert das Sprachlevel aus dem transkribierten Text."""
+    lower = text.lower()
+    for lvl in ["c1", "b2", "b1", "a2", "a1", "beginner"]:
+        if lvl in lower:
+            return lvl
+    return None
+
+
+async def _dispatch_voice_command(
+    cmd: str,
+    text: str,
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    """Führt den erkannten Sprachbefehl aus."""
+    if cmd == "lesson":
+        from bot.handlers.lesson import handle_lesson
+        await handle_lesson(update, context)
+
+    elif cmd == "quiz":
+        from bot.handlers.quiz import handle_quiz
+        await handle_quiz(update, context)
+
+    elif cmd == "progress":
+        from bot.handlers.progress import handle_progress
+        await handle_progress(update, context)
+
+    elif cmd == "teacher":
+        arg = _extract_teacher_arg(text)
+        if arg:
+            context.args = [arg]
+        else:
+            context.args = []
+        from bot.handlers.teacher import handle_teacher
+        await handle_teacher(update, context)
+
+    elif cmd == "setlevel":
+        arg = _extract_level_arg(text)
+        if arg:
+            context.args = [arg]
+        else:
+            context.args = []
+        from bot.handlers.setlevel import handle_setlevel
+        await handle_setlevel(update, context)
+
+    elif cmd == "remind":
+        # Einfach Info-Nachricht
+        await update.message.reply_text(
+            "⏰ Nutze /remind 09:00 um eine tägliche Erinnerung zu setzen, "
+            "oder /remind off zum Deaktivieren."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Haupt-Handler
+# ---------------------------------------------------------------------------
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Verarbeitet Sprachnachrichten.
     - Wenn pronunciation_session aktiv: Aussprache-Bewertung
+    - Wenn Sprachbefehl erkannt: Handler aufrufen
     - Sonst: STT -> DialogueRouter -> TTS-Antwort
     """
     from bot.handlers.pronunciation import handle_voice_pronunciation
@@ -36,6 +135,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     await context.bot.send_chat_action(update.effective_chat.id, action="typing")
 
+    # Audio herunterladen
     try:
         tg_file = await context.bot.get_file(update.message.voice.file_id)
         audio_dir = Path("media/audio")
@@ -47,19 +147,28 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text("Не удалось загрузить аудио.")
         return
 
+    # STT
     stt = services.get("stt")
     try:
         text = await stt.transcribe(local_path)
     except Exception as e:
-        logger.warning("STT failed, using placeholder: %s", e)
+        logger.warning("STT failed: %s", e)
         text = "[voice message]"
 
     if not text or text.strip() == "[voice message]":
         await update.message.reply_text("Не удалось распознать речь. Попробуй ещё раз.")
         return
 
-    await update.message.reply_text(f"\U0001f4dd Распознано: _{text}_", parse_mode="Markdown")
+    await update.message.reply_text(f"📝 Распознано: _{text}_", parse_mode="Markdown")
 
+    # Sprachbefehl erkennen
+    cmd = _detect_voice_command(text)
+    if cmd:
+        logger.info("Voice command detected: %s (from: %s)", cmd, text)
+        await _dispatch_voice_command(cmd, text, update, context)
+        return
+
+    # Normaler Dialogue-Router
     if not dialogue_router:
         return
 
