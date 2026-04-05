@@ -1,0 +1,17 @@
+[Unit]
+Description=NataliaBot Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/natalia_bot
+ExecStart=/opt/natalia_bot/.venv/bin/python -m app.main
+Restart=on-failure
+RestartSec=10
+EnvironmentFile=/opt/natalia_bot/.env
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
