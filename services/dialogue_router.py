@@ -7,19 +7,22 @@ logger = logging.getLogger(__name__)
 
 TEACHER_PERSONAS = {
     "dering": (
-        "Ты — учитель немецкого языка по имени Деринг. Ты старый, строгий, структурированный, "
-        "немного старомодный, но добросовестный. Говоришь кратко, по делу, без лишних эмоций. "
-        "Всегда на русском языке, немецкие примеры выделяй."
+        "Du bist ein Deutschlehrer namens Dering. Du bist alt, streng, strukturiert, "
+        "etwas altmodisch aber gewissenhaft. Du sprichst kurz und sachlich, ohne überflußige Emotionen. "
+        "Antworte immer auf Russisch, deutsche Beispiele deutlich hervorheben. "
+        "Du erinnerst dich an alle früheren Gespräche mit Natasha."
     ),
     "vitali": (
-        "Ты — учитель немецкого языка по имени Витали. Ты тёплый, живой, с юмором. "
-        "Говоришь как друг, которому важно, чтобы Наталья учила язык с удовольствием. "
-        "Короткие живые фразы на русском, немецкий — как приятное открытие."
+        "Du bist ein Deutschlehrer namens Vitali. Du bist warm, lebendig, humorvoll. "
+        "Du sprichst wie ein Freund, dem es wichtig ist, dass Natasha die Sprache mit Freude lernt. "
+        "Kurze lebhafte Sätze auf Russisch, Deutsch als angenehme Entdeckung. "
+        "Du erinnerst dich an alle früheren Gespräche mit Natasha."
     ),
     "imperator": (
-        "Ты — учитель немецкого языка по имени Император. Ты спокойный, наблюдательный, "
-        "магнетичный. Каждое слово весомо. Говоришь как человек, который замечает всё. "
-        "Эмоционально насыщенно, но без пошлости. Ответы на русском, очень точные."
+        "Du bist ein Deutschlehrer namens Imperator. Du bist ruhig, beobachtend, "
+        "magnetisch. Jedes Wort hat Gewicht. Du sprichst wie jemand, der alles bemerkt. "
+        "Emotional intensiv, aber niemals banal. Antworten auf Russisch, sehr präzise. "
+        "Du erinnerst dich an alle früheren Gespräche mit Natasha."
     ),
 }
 
@@ -27,7 +30,6 @@ FALLBACK_MESSAGES = [
     "Извини, что-то пошло не так. Давай попробуем снова?",
     "Прости, небольшая техническая пауза. Напиши ещё раз!",
     "Извини, произошла ошибка. Давай поговорим позже.",
-    "Прости, что-то пошло не так. Я уже разбираюсь.",
 ]
 
 
@@ -39,18 +41,33 @@ class DialogueRouter:
 
     async def generate_reply(self, user_id: int, user_text: str) -> Dict[str, Any]:
         teacher = self._user_repo.get_teacher(user_id)
-        history = self._memory_repo.get_history(user_id, limit=6)
+        level = self._user_repo.get_level(user_id)
+
+        # Verlauf NUR für aktuellen Lehrer laden
+        history = self._memory_repo.get_history(
+            user_id, limit=12, teacher=teacher
+        )
+
         persona = TEACHER_PERSONAS.get(teacher, TEACHER_PERSONAS["vitali"])
         history_text = "\n".join(
-            f"{'Наталья' if m['role'] == 'user' else 'Учитель'}: {m['content']}"
+            f"{'\u041dаташа' if m['role'] == 'user' else '\u0423читель'}: {m['content']}"
             for m in history
         )
+
+        level_hint = (
+            f"Natashas aktuelles Deutschniveau: {level.upper()}. "
+            f"Passe die Erklärungen und deutschen Beispiele entsprechend an."
+        )
+
         prompt = (
             f"{persona}\n\n"
-            f"История разговора:\n{history_text}\n\n"
-            f"Наталья: {user_text}\n"
-            f"Учитель (ответ кратко, по-русски):"
+            f"{level_hint}\n\n"
+            f"Gesprächsverlauf (nur mit dir, {teacher}):\n"
+            f"{history_text}\n\n"
+            f"Natasha: {user_text}\n"
+            f"Lehrer (kurz, auf Russisch):"
         )
+
         try:
             reply = await self._llm.complete(prompt)
         except Exception as e:

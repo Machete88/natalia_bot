@@ -1,4 +1,4 @@
-"""Voice message handler mit Aussprache-Check-Integration und Sprachbefehl-Erkennung."""
+"""Voice message handler mit Aussprache-Check, Sprachbefehl- und Themen-Erkennung."""
 from __future__ import annotations
 
 import logging
@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Sprachbefehl-Erkennung
-# Schlüsselwörter (Russisch + Deutsch) -> interner Befehlsname
 # ---------------------------------------------------------------------------
 _VOICE_COMMANDS: list[tuple[list[str], str]] = [
     (["урок", "лексику", "лексика", "словa", "слова", "учить", "lektion", "lesson", "вокабуляр"], "lesson"),
@@ -24,9 +23,25 @@ _VOICE_COMMANDS: list[tuple[list[str], str]] = [
     (["напомни", "напоминание", "remind", "erinnerung"], "remind"),
 ]
 
+# Themen-Mapping (Russisch + Deutsch -> topic-slug)
+_TOPIC_MAP: list[tuple[list[str], str]] = [
+    (["еда", "еду", "пить", "питье", "ресторан", "кухня", "essen", "food", "trinken"], "food"),
+    (["цвета", "цветы", "оттенки", "цвета и оттенки", "farben", "farbe", "colors"], "colors"),
+    (["числа", "цифры", "считать", "zahlen", "numbers", "zahl"], "numbers"),
+    (["время", "день", "неделя", "месяц", "zeit", "datum", "uhrzeit", "woche"], "time"),
+    (["семья", "родственники", "родители", "familie", "family"], "family"),
+    (["тело", "здоровье", "части тела", "körper", "gesundheit", "body"], "body"),
+    (["путешествие", "поездка", "отпуск", "reise", "travel", "urlaub"], "travel"),
+    (["работа", "профессия", "офис", "arbeit", "beruf", "job", "work"], "work"),
+    (["дом", "квартира", "комната", "haus", "wohnen", "zimmer", "wohnung"], "home"),
+    (["погода", "погоду", "wetter", "weather", "regen", "sonne"], "weather"),
+    (["магазин", "покупки", "одежда", "einkaufen", "shopping", "kleidung"], "shopping"),
+    (["чувства", "эмоции", "настроение", "gefühle", "emotionen", "feelings"], "feelings"),
+    (["животные", "питомцы", "tiere", "animals", "haustiere"], "animals"),
+]
+
 
 def _detect_voice_command(text: str) -> str | None:
-    """Gibt den Befehlsnamen zurück wenn der Text einen Befehl enthält, sonst None."""
     lower = text.lower()
     for keywords, cmd in _VOICE_COMMANDS:
         for kw in keywords:
@@ -35,8 +50,17 @@ def _detect_voice_command(text: str) -> str | None:
     return None
 
 
+def _detect_topic(text: str) -> str | None:
+    """Erkennt ob Natasha ein Thema nennt (z.B. 'еда', 'Essen')."""
+    lower = text.lower()
+    for keywords, topic in _TOPIC_MAP:
+        for kw in keywords:
+            if kw in lower:
+                return topic
+    return None
+
+
 def _extract_teacher_arg(text: str) -> str | None:
-    """Extrahiert den Lehrernamen aus dem transkribierten Text."""
     lower = text.lower()
     for name in ["vitali", "витали"]:
         if name in lower:
@@ -51,7 +75,6 @@ def _extract_teacher_arg(text: str) -> str | None:
 
 
 def _extract_level_arg(text: str) -> str | None:
-    """Extrahiert das Sprachlevel aus dem transkribierten Text."""
     lower = text.lower()
     for lvl in ["c1", "b2", "b1", "a2", "a1", "beginner"]:
         if lvl in lower:
@@ -60,13 +83,15 @@ def _extract_level_arg(text: str) -> str | None:
 
 
 async def _dispatch_voice_command(
-    cmd: str,
-    text: str,
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
+    cmd: str, text: str, update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Führt den erkannten Sprachbefehl aus."""
     if cmd == "lesson":
+        # Thema aus dem Text extrahieren für Themen-Lektion
+        topic = _detect_topic(text)
+        if topic:
+            context.args = [topic]
+        else:
+            context.args = []
         from bot.handlers.lesson import handle_lesson
         await handle_lesson(update, context)
 
@@ -80,24 +105,17 @@ async def _dispatch_voice_command(
 
     elif cmd == "teacher":
         arg = _extract_teacher_arg(text)
-        if arg:
-            context.args = [arg]
-        else:
-            context.args = []
+        context.args = [arg] if arg else []
         from bot.handlers.teacher import handle_teacher
         await handle_teacher(update, context)
 
     elif cmd == "setlevel":
         arg = _extract_level_arg(text)
-        if arg:
-            context.args = [arg]
-        else:
-            context.args = []
+        context.args = [arg] if arg else []
         from bot.handlers.setlevel import handle_setlevel
         await handle_setlevel(update, context)
 
     elif cmd == "remind":
-        # Einfach Info-Nachricht
         await update.message.reply_text(
             "⏰ Nutze /remind 09:00 um eine tägliche Erinnerung zu setzen, "
             "oder /remind off zum Deaktivieren."
@@ -109,11 +127,6 @@ async def _dispatch_voice_command(
 # ---------------------------------------------------------------------------
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Verarbeitet Sprachnachrichten.
-    - Wenn pronunciation_session aktiv: Aussprache-Bewertung
-    - Wenn Sprachbefehl erkannt: Handler aufrufen
-    - Sonst: STT -> DialogueRouter -> TTS-Antwort
-    """
     from bot.handlers.pronunciation import handle_voice_pronunciation
     handled = await handle_voice_pronunciation(update, context)
     if handled:
@@ -161,10 +174,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     await update.message.reply_text(f"📝 Распознано: _{text}_", parse_mode="Markdown")
 
-    # Sprachbefehl erkennen
+    # Sprachbefehl erkennen (hat Priorität)
     cmd = _detect_voice_command(text)
     if cmd:
-        logger.info("Voice command detected: %s (from: %s)", cmd, text)
+        logger.info("Voice command: %s (text: %s)", cmd, text)
         await _dispatch_voice_command(cmd, text, update, context)
         return
 

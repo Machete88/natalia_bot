@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Natalia Bot — Admin Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root,[data-theme="light"]{
+  --bg:#f7f6f2;--surface:#f9f8f5;--surface-2:#fbfbf9;--border:#d4d1ca;
+  --text:#28251d;--muted:#7a7974;--faint:#bab9b4;
+  --primary:#01696f;--primary-h:#0c4e54;--primary-hl:#cedcd8;
+  --success:#437a22;--error:#a12c7b;--warning:#964219;
+  --orange:#da7101;--gold:#d19900;
+  --shadow:0 4px 16px oklch(0.2 0.01 80/0.08);
+  --r:0.5rem;--font-body:'Inter',sans-serif;--font-mono:'JetBrains Mono',monospace;
+}
+[data-theme="dark"]{
+  --bg:#171614;--surface:#1c1b19;--surface-2:#201f1d;--border:#393836;
+  --text:#cdccca;--muted:#797876;--faint:#5a5957;
+  --primary:#4f98a3;--primary-h:#227f8b;--primary-hl:#313b3b;
+  --success:#6daa45;--error:#d163a7;--warning:#bb653b;
+  --orange:#fdab43;--gold:#e8af34;
+  --shadow:0 4px 16px oklch(0 0 0/0.35);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;scroll-behavior:smooth}
+body{font-family:var(--font-body);font-size:15px;color:var(--text);background:var(--bg);min-height:100dvh;display:flex}
+
+/* Sidebar */
+.sidebar{width:220px;min-height:100dvh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:1.5rem 1rem;gap:0.25rem;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:0.6rem;margin-bottom:1.5rem;padding:0 0.5rem}
+.logo svg{flex-shrink:0}
+.logo-text{font-size:1rem;font-weight:600;letter-spacing:-0.01em}
+.logo-sub{font-size:0.75rem;color:var(--muted);font-weight:400}
+.nav-item{display:flex;align-items:center;gap:0.6rem;padding:0.55rem 0.75rem;border-radius:var(--r);color:var(--muted);font-size:0.875rem;cursor:pointer;transition:all 180ms ease;border:none;background:none;width:100%;text-align:left}
+.nav-item:hover{background:var(--primary-hl);color:var(--primary)}
+.nav-item.active{background:var(--primary-hl);color:var(--primary);font-weight:500}
+.nav-sep{height:1px;background:var(--border);margin:0.75rem 0.5rem}
+
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:56px;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 1.5rem;gap:1rem;flex-shrink:0}
+.topbar h1{font-size:1rem;font-weight:600;flex:1}
+.btn{display:inline-flex;align-items:center;gap:0.4rem;padding:0.45rem 0.9rem;border-radius:var(--r);font-size:0.875rem;font-weight:500;cursor:pointer;transition:all 180ms ease;border:none}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover{background:var(--primary-h)}
+.btn-ghost{background:none;color:var(--muted);border:1px solid var(--border)}.btn-ghost:hover{color:var(--text);border-color:var(--text)}
+.btn-danger{background:none;color:var(--error);border:1px solid var(--error)}.btn-danger:hover{background:var(--error);color:#fff}
+.theme-toggle{width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:var(--r);background:none;border:1px solid var(--border);cursor:pointer;color:var(--muted);transition:all 180ms ease}
+.theme-toggle:hover{color:var(--text);border-color:var(--text)}
+
+/* Content */
+.content{flex:1;overflow-y:auto;padding:1.5rem}
+.page{display:none}.page.active{display:block}
+
+/* KPI Cards */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:1.1rem 1.2rem}
+.kpi-label{font-size:0.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem}
+.kpi-value{font-size:1.6rem;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+.kpi-sub{font-size:0.75rem;color:var(--muted);margin-top:0.2rem}
+.kpi-card.accent .kpi-value{color:var(--primary)}
+.kpi-card.green .kpi-value{color:var(--success)}
+.kpi-card.orange .kpi-value{color:var(--orange)}
+.kpi-card.gold .kpi-value{color:var(--gold)}
+
+/* Section */
+.section-title{font-size:0.8rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:0.75rem}
+
+/* Tables */
+.table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:1.5rem}
+table{width:100%;border-collapse:collapse}
+th{font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted);padding:0.7rem 1rem;text-align:left;border-bottom:1px solid var(--border);background:var(--surface-2)}
+td{padding:0.7rem 1rem;font-size:0.875rem;border-bottom:1px solid var(--border)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--primary-hl)}
+.badge{display:inline-flex;padding:0.15rem 0.5rem;border-radius:99px;font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.03em}
+.badge-mastered{background:color-mix(in oklch,var(--success) 15%,transparent);color:var(--success)}
+.badge-learning{background:color-mix(in oklch,var(--primary) 15%,transparent);color:var(--primary)}
+.badge-new{background:color-mix(in oklch,var(--muted) 20%,transparent);color:var(--muted)}
+.badge-a1{background:color-mix(in oklch,var(--gold) 15%,transparent);color:var(--gold)}
+.badge-a2,.badge-b1{background:color-mix(in oklch,var(--orange) 15%,transparent);color:var(--orange)}
+.badge-b2,.badge-c1{background:color-mix(in oklch,var(--success) 15%,transparent);color:var(--success)}
+
+/* Forms */
+.form-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:0.75rem;align-items:end;margin-bottom:1.5rem}
+.form-group{display:flex;flex-direction:column;gap:0.35rem}
+label{font-size:0.75rem;font-weight:500;color:var(--muted)}
+input,select{padding:0.5rem 0.75rem;border-radius:var(--r);border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:0.875rem;font-family:var(--font-body);transition:border-color 180ms ease;outline:none}
+input:focus,select:focus{border-color:var(--primary)}
+input::placeholder{color:var(--faint)}
+
+/* Progress bar */
+.prog-bar{height:6px;background:var(--border);border-radius:99px;overflow:hidden;margin-top:0.3rem}
+.prog-fill{height:100%;background:var(--primary);border-radius:99px;transition:width 0.4s ease}
+
+/* Teacher avatar */
+.teacher-pills{display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.5rem}
+.teacher-pill{padding:0.35rem 0.9rem;border-radius:99px;font-size:0.8rem;font-weight:500;border:1.5px solid var(--border);cursor:pointer;transition:all 180ms ease;background:none;color:var(--muted)}
+.teacher-pill:hover,.teacher-pill.active{border-color:var(--primary);color:var(--primary);background:var(--primary-hl)}
+
+/* Notification */
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;padding:0.75rem 1.1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);font-size:0.875rem;opacity:0;transform:translateY(8px);transition:all 250ms ease;z-index:999;max-width:300px}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.success{border-color:var(--success);color:var(--success)}
+.toast.error{border-color:var(--error);color:var(--error)}
+
+/* Search */
+.search-row{display:flex;gap:0.75rem;margin-bottom:1rem;align-items:center}
+.search-row input{flex:1;max-width:320px}
+
+/* Empty state */
+.empty{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.empty svg{margin:0 auto 0.75rem;opacity:0.4}
+.empty p{font-size:0.875rem}
+
+/* Mobile */
+@media(max-width:640px){
+  .sidebar{display:none}
+  .form-grid{grid-template-columns:1fr 1fr}
+  .kpi-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="logo">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-label="Natalia Bot">
+      <rect width="28" height="28" rx="7" fill="var(--primary)"/>
+      <text x="14" y="19" font-size="14" font-weight="700" text-anchor="middle" fill="white" font-family="Inter,sans-serif">Н</text>
+    </svg>
+    <div><div class="logo-text">Natalia Bot</div><div class="logo-sub">Admin</div></div>
+  </div>
+
+  <button class="nav-item active" onclick="showPage('dashboard', this)">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Übersicht
+  </button>
+  <button class="nav-item" onclick="showPage('vocab', this)">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    Vokabeln
+  </button>
+  <button class="nav-item" onclick="showPage('progress', this)">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    Fortschritt
+  </button>
+  <button class="nav-item" onclick="showPage('history', this)">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    Verlauf
+  </button>
+  <div class="nav-sep"></div>
+  <button class="nav-item" onclick="showPage('settings', this)">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Einstellungen
+  </button>
+</nav>
+
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <h1 id="page-title">Übersicht</h1>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Theme wechseln">
+      <svg id="theme-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div id="page-dashboard" class="page active">
+      <div class="kpi-grid" id="kpi-grid">
+        <div class="kpi-card accent"><div class="kpi-label">Vokabeln gesamt</div><div class="kpi-value" id="kpi-total">-</div><div class="kpi-sub">in der Datenbank</div></div>
+        <div class="kpi-card green"><div class="kpi-label">Gemeistert</div><div class="kpi-value" id="kpi-mastered">-</div><div class="kpi-sub">3× korrekt in Folge</div></div>
+        <div class="kpi-card orange"><div class="kpi-label">Lernend</div><div class="kpi-value" id="kpi-learning">-</div><div class="kpi-sub">in Bearbeitung</div></div>
+        <div class="kpi-card"><div class="kpi-label">Neu</div><div class="kpi-value" id="kpi-new">-</div><div class="kpi-sub">noch nicht gelernt</div></div>
+        <div class="kpi-card gold"><div class="kpi-label">Themen</div><div class="kpi-value" id="kpi-topics">-</div><div class="kpi-sub">verfügbar</div></div>
+        <div class="kpi-card"><div class="kpi-label">Aktueller Lehrer</div><div class="kpi-value" id="kpi-teacher" style="font-size:1.1rem">-</div><div class="kpi-sub">aktiv</div></div>
+      </div>
+
+      <div class="section-title">Lernfortschritt</div>
+      <div class="table-wrap" style="margin-bottom:1.5rem">
+        <table>
+          <thead><tr><th>Thema</th><th>Gesamt</th><th>Gemeistert</th><th>Fortschritt</th></tr></thead>
+          <tbody id="topic-progress-body"></tbody>
+        </table>
+      </div>
+
+      <div class="section-title">Letzte Aktivität</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Wort (DE)</th><th>Wort (RU)</th><th>Status</th><th>Streak</th></tr></thead>
+          <tbody id="recent-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- VOKABELN -->
+    <div id="page-vocab" class="page">
+      <div class="section-title">Neue Vokabel hinzufügen</div>
+      <div class="form-grid">
+        <div class="form-group"><label>Russisch</label><input id="v-ru" placeholder="например"></div>
+        <div class="form-group"><label>Deutsch</label><input id="v-de" placeholder="Beispiel"></div>
+        <div class="form-group"><label>Thema</label>
+          <select id="v-topic">
+            <option value="general">general</option>
+            <option value="food">food</option>
+            <option value="colors">colors</option>
+            <option value="numbers">numbers</option>
+            <option value="time">time</option>
+            <option value="family">family</option>
+            <option value="body">body</option>
+            <option value="travel">travel</option>
+            <option value="work">work</option>
+            <option value="home">home</option>
+            <option value="weather">weather</option>
+            <option value="shopping">shopping</option>
+            <option value="feelings">feelings</option>
+            <option value="animals">animals</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Level</label>
+          <select id="v-level"><option value="a1">A1</option><option value="a2">A2</option><option value="b1">B1</option><option value="b2">B2</option><option value="c1">C1</option></select>
+        </div>
+        <button class="btn btn-primary" onclick="addVocab()">+ Hinzufügen</button>
+      </div>
+
+      <div class="search-row">
+        <input id="vocab-search" placeholder="Suchen..." oninput="renderVocabTable()">
+        <select id="vocab-filter-topic" onchange="renderVocabTable()" style="width:140px">
+          <option value="">Alle Themen</option>
+          <option value="general">general</option>
+          <option value="food">food</option><option value="colors">colors</option>
+          <option value="numbers">numbers</option><option value="time">time</option>
+          <option value="family">family</option><option value="body">body</option>
+          <option value="travel">travel</option><option value="work">work</option>
+          <option value="home">home</option><option value="weather">weather</option>
+          <option value="shopping">shopping</option><option value="feelings">feelings</option>
+          <option value="animals">animals</option>
+        </select>
+        <select id="vocab-filter-level" onchange="renderVocabTable()" style="width:100px">
+          <option value="">Alle Level</option>
+          <option value="a1">A1</option><option value="a2">A2</option>
+          <option value="b1">B1</option><option value="b2">B2</option><option value="c1">C1</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Russisch</th><th>Deutsch</th><th>Thema</th><th>Level</th><th>Status</th><th></th></tr></thead>
+          <tbody id="vocab-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- FORTSCHRITT -->
+    <div id="page-progress" class="page">
+      <div class="section-title">Fortschritt nach Thema</div>
+      <div class="table-wrap" style="margin-bottom:1.5rem">
+        <table>
+          <thead><tr><th>Thema</th><th>Gesamt</th><th>Gemeistert</th><th>Lernend</th><th>Neu</th><th>Fortschritt</th></tr></thead>
+          <tbody id="progress-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- VERLAUF -->
+    <div id="page-history" class="page">
+      <div class="search-row" style="margin-bottom:1rem">
+        <div class="teacher-pills" id="history-teacher-filter">
+          <button class="teacher-pill active" data-teacher="" onclick="filterHistory(this, '')">Alle</button>
+          <button class="teacher-pill" data-teacher="vitali" onclick="filterHistory(this, 'vitali')">Vitali</button>
+          <button class="teacher-pill" data-teacher="dering" onclick="filterHistory(this, 'dering')">Dering</button>
+          <button class="teacher-pill" data-teacher="imperator" onclick="filterHistory(this, 'imperator')">Imperator</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Rolle</th><th>Nachricht</th><th>Lehrer</th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- EINSTELLUNGEN -->
+    <div id="page-settings" class="page">
+      <div class="section-title">Datenbankpfad</div>
+      <div class="form-grid" style="grid-template-columns:1fr auto">
+        <div class="form-group"><label>SQLite-Datei</label><input id="db-path" placeholder="data/natalia.db" style="font-family:var(--font-mono)"></div>
+        <button class="btn btn-primary" onclick="loadDB()">Laden</button>
+      </div>
+      <div id="db-status" style="font-size:0.8rem;color:var(--muted);margin-top:-0.5rem;margin-bottom:1.5rem"></div>
+
+      <div class="section-title">Vokabeln importieren (JSON)</div>
+      <div class="form-grid" style="grid-template-columns:1fr auto">
+        <div class="form-group"><label>JSON-Array</label><input id="import-json" placeholder='[{"russian":"привет","german":"Hallo","topic":"general","level":"a1"}]'></div>
+        <button class="btn btn-primary" onclick="importJSON()">Importieren</button>
+      </div>
+
+      <div class="section-title" style="margin-top:1rem">Daten exportieren</div>
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="exportVocabCSV()">Vokabeln als CSV</button>
+        <button class="btn btn-ghost" onclick="exportProgressJSON()">Fortschritt als JSON</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---- State ----
+let DB = null;
+let allVocab = [];
+let allUserVocab = [];
+let allHistory = [];
+let historyTeacherFilter = '';
+
+// ---- sql.js laden ----
+const SQL_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js';
+const WASM_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
+
+async function loadSqlJs() {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = SQL_CDN;
+    s.onload = async () => {
+      try {
+        const SQL = await window.initSqlJs({ locateFile: () => WASM_CDN });
+        res(SQL);
+      } catch(e){ rej(e); }
+    };
+    s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+// ---- DB laden ----
+async function loadDB() {
+  const path = document.getElementById('db-path').value.trim();
+  const status = document.getElementById('db-status');
+  if (!path) { showToast('Bitte Datenbankpfad eingeben', 'error'); return; }
+
+  // Browser kann lokale Dateien nicht direkt öffnen - File-Picker
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.db,.sqlite,.sqlite3';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    status.textContent = `Lade ${file.name}...`;
+    try {
+      const SQL = await loadSqlJs();
+      const buf = await file.arrayBuffer();
+      DB = new SQL.Database(new Uint8Array(buf));
+      status.textContent = `✓ ${file.name} geladen`;
+      showToast(`Datenbank geladen: ${file.name}`, 'success');
+      refreshAll();
+    } catch(e) {
+      status.textContent = 'Fehler beim Laden';
+      showToast('Fehler: ' + e.message, 'error');
+    }
+  };
+  input.click();
+}
+
+function query(sql, params=[]) {
+  if (!DB) return [];
+  try {
+    const stmt = DB.prepare(sql);
+    const rows = [];
+    stmt.bind(params);
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
+  } catch(e) { return []; }
+}
+
+function exec(sql) {
+  if (!DB) return;
+  try { DB.run(sql); } catch(e) { showToast('DB-Fehler: ' + e.message, 'error'); }
+}
+
+// ---- Refresh all ----
+function refreshAll() {
+  allVocab = query('SELECT v.*, uv.status, uv.correct_streak FROM vocabulary v LEFT JOIN user_vocabulary uv ON v.id=uv.vocab_id');
+  allUserVocab = query('SELECT uv.*, v.russian, v.german, v.topic FROM user_vocabulary uv JOIN vocabulary v ON v.id=uv.vocab_id ORDER BY uv.last_seen DESC');
+  allHistory = query('SELECT * FROM memory ORDER BY id DESC LIMIT 200');
+  renderKPIs();
+  renderTopicProgress();
+  renderRecentActivity();
+  renderVocabTable();
+  renderProgressTable();
+  renderHistoryTable();
+}
+
+// ---- KPIs ----
+function renderKPIs() {
+  const total = allVocab.length;
+  const mastered = allUserVocab.filter(r=>r.status==='mastered').length;
+  const learning = allUserVocab.filter(r=>r.status==='learning').length;
+  const newW = allUserVocab.filter(r=>r.status==='new').length;
+  const topics = [...new Set(allVocab.map(r=>r.topic))].length;
+  const teacherRows = query('SELECT teacher FROM users LIMIT 1');
+  const teacher = teacherRows[0]?.teacher || '-';
+  document.getElementById('kpi-total').textContent = total;
+  document.getElementById('kpi-mastered').textContent = mastered;
+  document.getElementById('kpi-learning').textContent = learning;
+  document.getElementById('kpi-new').textContent = newW;
+  document.getElementById('kpi-topics').textContent = topics;
+  document.getElementById('kpi-teacher').textContent = teacher.charAt(0).toUpperCase()+teacher.slice(1);
+}
+
+// ---- Topic Progress ----
+function renderTopicProgress() {
+  const tbody = document.getElementById('topic-progress-body');
+  const topics = [...new Set(allVocab.map(r=>r.topic))];
+  tbody.innerHTML = topics.map(t => {
+    const rows = allVocab.filter(r=>r.topic===t);
+    const total = rows.length;
+    const mastered = rows.filter(r=>r.status==='mastered').length;
+    const pct = total ? Math.round(mastered/total*100) : 0;
+    return `<tr>
+      <td>${t}</td><td>${total}</td><td>${mastered}</td>
+      <td style="min-width:140px">
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${pct}%"></div></div>
+          <span style="font-size:0.75rem;color:var(--muted);min-width:30px">${pct}%</span>
+        </div>
+      </td></tr>`;
+  }).join('');
+  if (!topics.length) tbody.innerHTML = '<tr><td colspan="4"><div class="empty"><p>Keine Daten</p></div></td></tr>';
+}
+
+// ---- Recent Activity ----
+function renderRecentActivity() {
+  const tbody = document.getElementById('recent-body');
+  const rows = allUserVocab.slice(0, 10);
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${r.german}</td><td>${r.russian}</td>
+    <td><span class="badge badge-${r.status}">${r.status}</span></td>
+    <td>${r.correct_streak||0}</td></tr>`).join('');
+  if (!rows.length) tbody.innerHTML = '<tr><td colspan="4"><div class="empty"><p>Noch keine Aktivität</p></div></td></tr>';
+}
+
+// ---- Vocab Table ----
+function renderVocabTable() {
+  const search = document.getElementById('vocab-search').value.toLowerCase();
+  const filterTopic = document.getElementById('vocab-filter-topic').value;
+  const filterLevel = document.getElementById('vocab-filter-level').value;
+  let rows = allVocab;
+  if (search) rows = rows.filter(r => r.german?.toLowerCase().includes(search) || r.russian?.toLowerCase().includes(search));
+  if (filterTopic) rows = rows.filter(r => r.topic === filterTopic);
+  if (filterLevel) rows = rows.filter(r => r.level === filterLevel);
+  const tbody = document.getElementById('vocab-body');
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${r.russian}</td><td>${r.german}</td>
+    <td><span class="badge badge-new" style="font-size:0.65rem">${r.topic}</span></td>
+    <td><span class="badge badge-${r.level}">${(r.level||'?').toUpperCase()}</span></td>
+    <td><span class="badge badge-${r.status||'new'}">${r.status||'new'}</span></td>
+    <td><button class="btn btn-danger" style="padding:0.2rem 0.5rem;font-size:0.75rem" onclick="deleteVocab(${r.id})">Löschen</button></td></tr>`).join('');
+  if (!rows.length) tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><p>Keine Vokabeln gefunden</p></div></td></tr>';
+}
+
+// ---- Add Vocab ----
+function addVocab() {
+  if (!DB) { showToast('Bitte zuerst Datenbank laden', 'error'); return; }
+  const ru = document.getElementById('v-ru').value.trim();
+  const de = document.getElementById('v-de').value.trim();
+  const topic = document.getElementById('v-topic').value;
+  const level = document.getElementById('v-level').value;
+  if (!ru || !de) { showToast('Russisch und Deutsch ausfüllen', 'error'); return; }
+  DB.run('INSERT INTO vocabulary (russian, german, topic, level) VALUES (?,?,?,?)', [ru, de, topic, level]);
+  document.getElementById('v-ru').value = '';
+  document.getElementById('v-de').value = '';
+  showToast(`✓ "${de}" hinzugefügt`, 'success');
+  refreshAll();
+}
+
+// ---- Delete Vocab ----
+function deleteVocab(id) {
+  if (!DB) return;
+  DB.run('DELETE FROM vocabulary WHERE id=?', [id]);
+  DB.run('DELETE FROM user_vocabulary WHERE vocab_id=?', [id]);
+  showToast('Vokabel gelöscht', 'success');
+  refreshAll();
+}
+
+// ---- Progress Table ----
+function renderProgressTable() {
+  const topics = [...new Set(allVocab.map(r=>r.topic))];
+  const tbody = document.getElementById('progress-body');
+  tbody.innerHTML = topics.map(t => {
+    const tv = allVocab.filter(r=>r.topic===t);
+    const tuv = allUserVocab.filter(r=>r.topic===t);
+    const total = tv.length;
+    const mastered = tuv.filter(r=>r.status==='mastered').length;
+    const learning = tuv.filter(r=>r.status==='learning').length;
+    const newW = tuv.filter(r=>r.status==='new').length;
+    const pct = total ? Math.round(mastered/total*100) : 0;
+    return `<tr>
+      <td>${t}</td><td>${total}</td><td>${mastered}</td><td>${learning}</td><td>${newW}</td>
+      <td style="min-width:140px">
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <div class="prog-bar" style="flex:1"><div class="prog-fill" style="width:${pct}%"></div></div>
+          <span style="font-size:0.75rem;color:var(--muted);min-width:30px">${pct}%</span>
+        </div>
+      </td></tr>`;
+  }).join('');
+  if (!topics.length) tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><p>Keine Daten</p></div></td></tr>';
+}
+
+// ---- History Table ----
+function renderHistoryTable() {
+  const tbody = document.getElementById('history-body');
+  let rows = allHistory;
+  if (historyTeacherFilter) rows = rows.filter(r => r.teacher === historyTeacherFilter);
+  tbody.innerHTML = rows.map(r => {
+    const isUser = r.role === 'user';
+    const roleStyle = isUser ? 'color:var(--primary)' : 'color:var(--text)';
+    const label = isUser ? '👤 Natasha' : '🏫 Lehrer';
+    return `<tr>
+      <td style="${roleStyle};font-weight:500;white-space:nowrap">${label}</td>
+      <td style="max-width:500px;word-break:break-word">${r.content}</td>
+      <td><span class="badge badge-new" style="font-size:0.65rem">${r.teacher||'-'}</span></td></tr>`;
+  }).join('');
+  if (!rows.length) tbody.innerHTML = '<tr><td colspan="3"><div class="empty"><p>Kein Verlauf gefunden</p></div></td></tr>';
+}
+
+function filterHistory(btn, teacher) {
+  document.querySelectorAll('.teacher-pill').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  historyTeacherFilter = teacher;
+  renderHistoryTable();
+}
+
+// ---- Import JSON ----
+function importJSON() {
+  if (!DB) { showToast('Bitte zuerst Datenbank laden', 'error'); return; }
+  const raw = document.getElementById('import-json').value.trim();
+  try {
+    const arr = JSON.parse(raw);
+    let count = 0;
+    for (const item of arr) {
+      DB.run('INSERT OR IGNORE INTO vocabulary (russian, german, topic, level) VALUES (?,?,?,?)',
+        [item.russian||'', item.german||'', item.topic||'general', item.level||'a1']);
+      count++;
+    }
+    showToast(`✓ ${count} Vokabeln importiert`, 'success');
+    document.getElementById('import-json').value = '';
+    refreshAll();
+  } catch(e) { showToast('Ungültiges JSON', 'error'); }
+}
+
+// ---- Export CSV ----
+function exportVocabCSV() {
+  if (!DB) { showToast('Bitte zuerst Datenbank laden', 'error'); return; }
+  const rows = query('SELECT russian, german, topic, level FROM vocabulary');
+  const csv = 'russian,german,topic,level\n' + rows.map(r=>`"${r.russian}","${r.german}","${r.topic}","${r.level}"`).join('\n');
+  downloadText(csv, 'vocabulary.csv', 'text/csv');
+}
+
+function exportProgressJSON() {
+  if (!DB) { showToast('Bitte zuerst Datenbank laden', 'error'); return; }
+  const rows = query('SELECT v.russian, v.german, v.topic, uv.status, uv.correct_streak FROM user_vocabulary uv JOIN vocabulary v ON v.id=uv.vocab_id');
+  downloadText(JSON.stringify(rows, null, 2), 'progress.json', 'application/json');
+}
+
+function downloadText(text, filename, mime) {
+  const blob = new Blob([text], {type: mime});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
+// ---- Navigation ----
+const PAGE_TITLES = {dashboard:'Übersicht', vocab:'Vokabeln', progress:'Fortschritt', history:'Verlauf', settings:'Einstellungen'};
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('page-title').textContent = PAGE_TITLES[id];
+}
+
+// ---- Theme ----
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  document.getElementById('theme-icon').innerHTML = isDark
+    ? '<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>'
+    : '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+}
+
+// ---- Toast ----
+function showToast(msg, type='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' '+type : '');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// Beim Start: Demo-Hinweis
+showToast('ℹ️ Datenbank laden → Einstellungen', '');
+</script>
+</body>
+</html>
