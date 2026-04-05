@@ -1,6 +1,7 @@
 """Handler fuer /lesson Befehl - startet eine Vokabel-Lerneinheit."""
 from __future__ import annotations
 
+import io
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -77,15 +78,31 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         lines.append("")  # Leerzeile zwischen Eintraegen
 
     full_text = "\n".join(lines)
-
-    # Text als Telegram-Nachricht senden (Markdown)
     await update.message.reply_text(full_text, parse_mode="Markdown")
 
-    # Zusaetzlich: TTS-Zusammenfassung der deutschen Woerter
+    # Lernkarten als Bilder senden
+    try:
+        from services.card_generator import generate_card_bytes
+        for i, step in enumerate(steps, 1):
+            card_bytes = generate_card_bytes(
+                word_de=step.word_de,
+                word_ru=step.word_ru,
+                example=step.example_de,
+                card_num=i,
+                teacher=teacher,
+            )
+            if card_bytes:
+                await update.message.reply_photo(
+                    photo=io.BytesIO(card_bytes),
+                    caption=f"{step.word_de} = {step.word_ru}",
+                )
+    except Exception as e:
+        logger.warning("Card image generation failed: %s", e)
+
+    # TTS-Zusammenfassung der deutschen Woerter
     if tts and voice_pipeline:
         words_de = ", ".join(step.word_de for step in steps)
         tts_text = f"Heute lernst du: {words_de}."
-
         try:
             voice_map = voice_pipeline.voice_map
             voice_id = voice_map.get(teacher.lower(), teacher)
