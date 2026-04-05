@@ -1,7 +1,7 @@
 """Settings loaded from environment / .env file."""
 from __future__ import annotations
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -40,6 +40,10 @@ class Settings:
     voice_id_imperator: Optional[str] = None
     database_path: str = "data/natalia_bot.db"
     log_file: str = "logs/bot.log"
+    # Support-Modus
+    support_codeword: str = "hilfe123"
+    daily_reminder_time: str = "09:00"
+    timezone: str = "Europe/Berlin"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -74,4 +78,7 @@ class Settings:
             voice_id_imperator=env.get("VOICE_ID_IMPERATOR"),
             database_path=env.get("DATABASE_PATH", "data/natalia_bot.db"),
             log_file=env.get("LOG_FILE", "logs/bot.log"),
+            support_codeword=env.get("SUPPORT_CODEWORD", "hilfe123"),
+            daily_reminder_time=env.get("DAILY_REMINDER_TIME", "09:00"),
+            timezone=env.get("TIMEZONE", "Europe/Berlin"),
         )
