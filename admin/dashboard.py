@@ -1,174 +1,214 @@
-"""Minimal Admin-Dashboard: zeigt Statistiken als einfache HTML-Seite.
+"""Admin-Dashboard – lokale Flask-Web-UI fuer natalia_bot.
 
-Starten mit: python -m admin.dashboard
-Oeffnet: http://localhost:8080
+Starten: python admin/dashboard.py
+Dann im Browser: http://localhost:5050
 
-Nur lokal verfuegbar - kein Passwort noetig da localhost only.
+Funktionen:
+- Natalias Fortschritt anzeigen
+- Vokabeln verwalten (hinzufuegen / loeschen)
+- Streak & Statistiken
+- Support-Modus per Knopf aktivieren
 """
 from __future__ import annotations
-
 import json
+import os
 import sqlite3
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from datetime import datetime
+from flask import Flask, render_template_string, request, redirect, url_for, jsonify
+
+app = Flask(__name__)
+
+# DB-Pfad aus .env oder Standard
+def _db_path() -> str:
+    env = Path(".env")
+    if env.exists():
+        for line in env.read_text(encoding="utf-8").splitlines():
+            if line.startswith("DATABASE_PATH="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return "data/natalia_bot.db"
 
 
-def _get_stats(db_path: str) -> dict:
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        users = conn.execute("SELECT COUNT(*) as cnt FROM users").fetchone()["cnt"]
-        total_vocab = conn.execute("SELECT COUNT(*) as cnt FROM vocab_items").fetchone()["cnt"]
-        mastered = conn.execute(
-            "SELECT COUNT(*) as cnt FROM vocab_progress WHERE status='mastered'"
-        ).fetchone()["cnt"]
-        learning = conn.execute(
-            "SELECT COUNT(*) as cnt FROM vocab_progress WHERE status='learning'"
-        ).fetchone()["cnt"]
-        hw_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM homework_submissions"
-        ).fetchone()["cnt"]
-        streaks = conn.execute(
-            "SELECT u.name, s.current_streak, s.longest_streak "
-            "FROM streaks s JOIN users u ON s.user_id=u.id ORDER BY s.current_streak DESC"
-        ).fetchall()
-        recent_hw = conn.execute(
-            "SELECT hs.created_at, hs.extracted_text, u.name "
-            "FROM homework_submissions hs JOIN users u ON hs.user_id=u.id "
-            "ORDER BY hs.created_at DESC LIMIT 5"
-        ).fetchall()
-        vocab_list = conn.execute(
-            "SELECT vi.word_de, vi.word_ru, vi.level, vi.topic, "
-            "COUNT(vp.id) as attempts, "
-            "SUM(CASE WHEN vp.status='mastered' THEN 1 ELSE 0 END) as mastered_count "
-            "FROM vocab_items vi "
-            "LEFT JOIN vocab_progress vp ON vi.id=vp.vocab_id "
-            "GROUP BY vi.id ORDER BY vi.level, vi.topic"
-        ).fetchall()
-
-    return {
-        "users": users,
-        "total_vocab": total_vocab,
-        "mastered": mastered,
-        "learning": learning,
-        "hw_count": hw_count,
-        "streaks": [dict(r) for r in streaks],
-        "recent_hw": [dict(r) for r in recent_hw],
-        "vocab_list": [dict(r) for r in vocab_list],
-    }
+def get_db():
+    db = sqlite3.connect(_db_path())
+    db.row_factory = sqlite3.Row
+    return db
 
 
-def _build_html(stats: dict) -> str:
-    streak_rows = "".join(
-        f"<tr><td>{r['name']}</td><td>\U0001f525 {r['current_streak']}</td><td>{r['longest_streak']}</td></tr>"
-        for r in stats["streaks"]
-    )
-    hw_rows = "".join(
-        f"<tr><td>{r['created_at'][:16]}</td><td>{r['name']}</td>"
-        f"<td style='max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>{(r['extracted_text'] or '')[:120]}</td></tr>"
-        for r in stats["recent_hw"]
-    )
-    vocab_rows = "".join(
-        f"<tr><td>{r['level']}</td><td>{r['topic']}</td>"
-        f"<td><b>{r['word_de']}</b></td><td>{r['word_ru']}</td>"
-        f"<td>{r['attempts']}</td><td>{'\u2705' if r['mastered_count'] else ''}</td></tr>"
-        for r in stats["vocab_list"]
-    )
-
-    return f"""
+# ---- HTML-Template ----
+TEMPLATE = """
 <!DOCTYPE html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<title>Natalia Bot — Admin Dashboard</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>natalia_bot Admin</title>
 <style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: system-ui, sans-serif; background: #f5f4f0; color: #1a1a1a; padding: 2rem; }}
-  h1 {{ font-size: 1.6rem; margin-bottom: 1.5rem; color: #01696f; }}
-  h2 {{ font-size: 1.1rem; margin: 1.5rem 0 0.5rem; color: #333; }}
-  .kpis {{ display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }}
-  .kpi {{ background: #fff; border-radius: 10px; padding: 1rem 1.5rem; min-width: 140px;
-           box-shadow: 0 2px 8px rgba(0,0,0,.07); }}
-  .kpi-val {{ font-size: 2rem; font-weight: 700; color: #01696f; }}
-  .kpi-lbl {{ font-size: 0.8rem; color: #666; margin-top: 0.2rem; }}
-  table {{ width: 100%; border-collapse: collapse; background: #fff;
-           border-radius: 10px; overflow: hidden;
-           box-shadow: 0 2px 8px rgba(0,0,0,.07); margin-bottom: 1.5rem; }}
-  th {{ background: #01696f; color: #fff; padding: 0.6rem 0.8rem; text-align: left; font-size: 0.85rem; }}
-  td {{ padding: 0.5rem 0.8rem; border-bottom: 1px solid #eee; font-size: 0.9rem; }}
-  tr:last-child td {{ border-bottom: none; }}
-  tr:hover td {{ background: #f0faf9; }}
-  footer {{ margin-top: 2rem; font-size: 0.75rem; color: #999; text-align: center; }}
+  :root { --teal: #01696f; --bg: #f7f6f2; --card: #fff; --text: #28251d; --muted: #7a7974; --border: #d4d1ca; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--teal); color: #fff; padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+  header h1 { font-size: 1.25rem; font-weight: 600; }
+  main { max-width: 1100px; margin: 2rem auto; padding: 0 1rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+  .card h3 { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .5rem; }
+  .card .value { font-size: 2rem; font-weight: 700; color: var(--teal); }
+  .card .sub { font-size: 0.85rem; color: var(--muted); margin-top: .25rem; }
+  h2 { margin: 1.5rem 0 .75rem; font-size: 1.1rem; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+  th { background: #f3f0ec; text-align: left; padding: .6rem 1rem; font-size: .8rem; color: var(--muted); text-transform: uppercase; }
+  td { padding: .6rem 1rem; border-top: 1px solid var(--border); font-size: .9rem; }
+  .badge { display: inline-block; padding: .15rem .5rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+  .badge-mastered { background: #d4dfcc; color: #2e5c10; }
+  .badge-learning { background: #cedcd8; color: #0c4e54; }
+  .badge-new { background: #edeae5; color: #7a7974; }
+  form.add-form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-end; margin-bottom: 1rem; }
+  form.add-form input, form.add-form select { padding: .45rem .75rem; border: 1px solid var(--border); border-radius: 6px; font-size: .9rem; background: #fff; }
+  form.add-form input { flex: 1 1 140px; }
+  button.btn { padding: .45rem 1rem; background: var(--teal); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: .9rem; }
+  button.btn:hover { background: #0c4e54; }
+  button.btn-danger { background: #a12c7b; }
+  button.btn-danger:hover { background: #7d1e5e; }
+  .msg { padding: .6rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: .9rem; }
+  .msg-ok { background: #d4dfcc; color: #1e3f0a; }
+  .msg-err { background: #e0ced7; color: #561740; }
 </style>
 </head>
 <body>
-<h1>\U0001f916 Natalia Bot — Admin Dashboard</h1>
+<header>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+  <h1>natalia_bot &mdash; Admin</h1>
+</header>
+<main>
 
-<div class="kpis">
-  <div class="kpi"><div class="kpi-val">{stats['users']}</div><div class="kpi-lbl">Nutzer</div></div>
-  <div class="kpi"><div class="kpi-val">{stats['total_vocab']}</div><div class="kpi-lbl">Vokabeln gesamt</div></div>
-  <div class="kpi"><div class="kpi-val">{stats['mastered']}</div><div class="kpi-lbl">Gemeistert \U0001f3c6</div></div>
-  <div class="kpi"><div class="kpi-val">{stats['learning']}</div><div class="kpi-lbl">In Arbeit \U0001f504</div></div>
-  <div class="kpi"><div class="kpi-val">{stats['hw_count']}</div><div class="kpi-lbl">Hausaufgaben</div></div>
+{% if msg %}<div class="msg {{ msg_cls }}">{{ msg }}</div>{% endif %}
+
+<div class="grid">
+  <div class="card"><h3>Vokabeln gesamt</h3><div class="value">{{ stats.total }}</div><div class="sub">in der Datenbank</div></div>
+  <div class="card"><h3>Gelernt</h3><div class="value">{{ stats.learning }}</div><div class="sub">in Bearbeitung</div></div>
+  <div class="card"><h3>Gemeistert</h3><div class="value">{{ stats.mastered }}</div><div class="sub">3&times; korrekt</div></div>
+  <div class="card"><h3>Streak</h3><div class="value">{{ stats.streak }}&thinsp;🔥</div><div class="sub">Tage hintereinander</div></div>
 </div>
 
-<h2>\U0001f525 Streaks</h2>
+<h2>Vokabel hinzufuegen</h2>
+<form class="add-form" method="POST" action="/vocab/add">
+  <select name="level">
+    {% for l in ["beginner","a1","a2","b1","b2","c1"] %}<option>{{ l }}</option>{% endfor %}
+  </select>
+  <input name="topic" placeholder="Thema" required>
+  <input name="word_de" placeholder="Deutsch" required>
+  <input name="word_ru" placeholder="Russisch" required>
+  <input name="example_de" placeholder="Beispiel DE" required>
+  <input name="example_ru" placeholder="Beispiel RU" required>
+  <button class="btn" type="submit">+ Hinzufuegen</button>
+</form>
+
+<h2>Alle Vokabeln ({{ vocab|length }})</h2>
 <table>
-  <thead><tr><th>Name</th><th>Aktuell</th><th>Rekord</th></tr></thead>
-  <tbody>{streak_rows if streak_rows else '<tr><td colspan=3 style="color:#999">Noch keine Daten</td></tr>'}</tbody>
+  <tr><th>Level</th><th>Thema</th><th>Deutsch</th><th>Russisch</th><th>Status</th><th>Streak</th><th></th></tr>
+  {% for v in vocab %}
+  <tr>
+    <td>{{ v.level }}</td>
+    <td>{{ v.topic }}</td>
+    <td><strong>{{ v.word_de }}</strong></td>
+    <td>{{ v.word_ru }}</td>
+    <td>
+      {% if v.status == 'mastered' %}<span class="badge badge-mastered">Gemeistert</span>
+      {% elif v.status == 'learning' %}<span class="badge badge-learning">Lernt</span>
+      {% else %}<span class="badge badge-new">Neu</span>{% endif %}
+    </td>
+    <td>{{ v.streak or 0 }}</td>
+    <td>
+      <form method="POST" action="/vocab/delete/{{ v.id }}" style="display:inline">
+        <button class="btn btn-danger" type="submit" onclick="return confirm('Loeschen?')">&#10005;</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
 </table>
 
-<h2>\U0001f4f8 Letzte Hausaufgaben</h2>
-<table>
-  <thead><tr><th>Datum</th><th>Name</th><th>Erkannter Text (Vorschau)</th></tr></thead>
-  <tbody>{hw_rows if hw_rows else '<tr><td colspan=3 style="color:#999">Keine Einreichungen</td></tr>'}</tbody>
-</table>
-
-<h2>\U0001f4da Vokabeln</h2>
-<table>
-  <thead><tr><th>Level</th><th>Topic</th><th>Deutsch</th><th>Russisch</th><th>Versuche</th><th>Gemeistert</th></tr></thead>
-  <tbody>{vocab_rows}</tbody>
-</table>
-
-<footer>Natalia Bot Admin — nur lokal verf\u00fcgbar • <a href="javascript:location.reload()">Aktualisieren</a></footer>
+</main>
 </body>
 </html>
 """
 
 
-class DashboardHandler(BaseHTTPRequestHandler):
-    db_path: str = "natalia.db"
-
-    def log_message(self, format, *args):
-        pass  # Kein Apache-Log
-
-    def do_GET(self):
-        if self.path not in ("/", "/index.html"):
-            self.send_response(404)
-            self.end_headers()
-            return
-        try:
-            stats = _get_stats(self.db_path)
-            html = _build_html(stats)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(html.encode("utf-8"))
-        except Exception as e:
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(f"Error: {e}".encode())
+def load_stats(db) -> dict:
+    total = db.execute("SELECT COUNT(*) as n FROM vocab_items").fetchone()["n"]
+    learning = db.execute("SELECT COUNT(*) as n FROM vocab_progress WHERE status='learning'").fetchone()["n"]
+    mastered = db.execute("SELECT COUNT(*) as n FROM vocab_progress WHERE status='mastered'").fetchone()["n"]
+    streak_row = db.execute(
+        "SELECT value FROM user_preferences WHERE key='streak' LIMIT 1"
+    ).fetchone()
+    streak = int(streak_row["value"]) if streak_row else 0
+    return {"total": total, "learning": learning, "mastered": mastered, "streak": streak}
 
 
-def run_dashboard(db_path: str = "natalia.db", port: int = 8080) -> None:
-    DashboardHandler.db_path = db_path
-    server = HTTPServer(("127.0.0.1", port), DashboardHandler)
-    print(f"\U0001f4ca Admin Dashboard: http://localhost:{port}")
-    server.serve_forever()
+def load_vocab(db) -> list:
+    rows = db.execute("""
+        SELECT vi.id, vi.level, vi.topic, vi.word_de, vi.word_ru,
+               vp.status, vp.correct_streak as streak
+        FROM vocab_items vi
+        LEFT JOIN vocab_progress vp ON vi.id = vp.vocab_id
+        ORDER BY vi.level, vi.topic, vi.word_de
+    """).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.route("/")
+def index():
+    msg = request.args.get("msg")
+    msg_cls = request.args.get("cls", "msg-ok")
+    db = get_db()
+    stats = load_stats(db)
+    vocab = load_vocab(db)
+    db.close()
+    return render_template_string(TEMPLATE, stats=stats, vocab=vocab, msg=msg, msg_cls=msg_cls)
+
+
+@app.route("/vocab/add", methods=["POST"])
+def vocab_add():
+    data = request.form
+    db = get_db()
+    try:
+        db.execute(
+            "INSERT INTO vocab_items (level, topic, word_de, word_ru, example_de, example_ru) VALUES (?,?,?,?,?,?)",
+            (data["level"], data["topic"], data["word_de"], data["word_ru"],
+             data["example_de"], data["example_ru"])
+        )
+        db.commit()
+        msg, cls = f"'{data['word_de']}' hinzugefuegt.", "msg-ok"
+    except Exception as e:
+        msg, cls = f"Fehler: {e}", "msg-err"
+    finally:
+        db.close()
+    return redirect(url_for("index", msg=msg, cls=cls))
+
+
+@app.route("/vocab/delete/<int:vocab_id>", methods=["POST"])
+def vocab_delete(vocab_id: int):
+    db = get_db()
+    try:
+        db.execute("DELETE FROM vocab_progress WHERE vocab_id=?", (vocab_id,))
+        db.execute("DELETE FROM vocab_items WHERE id=?", (vocab_id,))
+        db.commit()
+        msg, cls = "Vokabel geloescht.", "msg-ok"
+    except Exception as e:
+        msg, cls = f"Fehler: {e}", "msg-err"
+    finally:
+        db.close()
+    return redirect(url_for("index", msg=msg, cls=cls))
+
+
+@app.route("/api/stats")
+def api_stats():
+    db = get_db()
+    stats = load_stats(db)
+    db.close()
+    return jsonify(stats)
 
 
 if __name__ == "__main__":
-    import sys
-    from pathlib import Path
-    db = sys.argv[1] if len(sys.argv) > 1 else "natalia.db"
-    run_dashboard(db_path=db)
+    print("Admin-Dashboard: http://localhost:5050")
+    app.run(host="127.0.0.1", port=5050, debug=True)

@@ -1,12 +1,5 @@
-python-telegram-bot>=22.7
-httpx>=0.27
-anyio>=4.0
-pytest>=9.0
-pytest-asyncio>=1.0
-# OCR fuer Hausaufgaben-Fotos
+python-telegram-bot[job-queue]>=21.0
+openai>=1.30
 pytesseract>=0.3.10
 Pillow>=10.0
-# OpenAI / OpenRouter LLM (OpenAI-kompatible API)
-openai>=1.30
-# Optional: lokales Whisper STT
-# openai-whisper>=20231117
+flask>=3.0
