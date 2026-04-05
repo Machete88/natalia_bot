@@ -1,6 +1,7 @@
 """Entry point fuer natalia_bot."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 import sys
@@ -38,7 +39,6 @@ def main() -> None:
     services = initialise_services(settings)
     logger.info("Services initialised.")
 
-    # App bauen (synchron)
     app = build_application(settings, services)
 
     # Taeglich-Erinnerung
@@ -73,8 +73,20 @@ def main() -> None:
         logger.warning("Could not schedule daily reminder: %s", e)
 
     logger.info("Bot is running. Press Ctrl+C to stop.")
-    # run_polling verwaltet seinen eigenen Event Loop intern
-    app.run_polling(drop_pending_updates=True)
+
+    # Python 3.10+ / 3.14: run_polling muss im eigenen asyncio.run() laufen
+    # damit ein Event Loop korrekt erstellt wird.
+    async def _run() -> None:
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling(drop_pending_updates=True)
+        # Warte bis SIGINT / Ctrl+C
+        await asyncio.Event().wait()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user.")
 
 
 if __name__ == "__main__":
