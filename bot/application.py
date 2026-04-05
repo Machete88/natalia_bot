@@ -24,11 +24,23 @@ async def build_application(settings: Settings, services: dict) -> Application:
     from bot.handlers.messages import handle_text
     from bot.handlers.voice import handle_voice
     from bot.handlers.lesson import handle_lesson
+    from bot.handlers.teacher import handle_teacher
+    from bot.handlers.progress import handle_progress
+    from bot.handlers.homework import handle_homework
 
+    # Befehle
     app.add_handler(CommandHandler("start", handle_start, filters=auth_filter))
     app.add_handler(CommandHandler("lesson", handle_lesson, filters=auth_filter))
+    app.add_handler(CommandHandler("teacher", handle_teacher, filters=auth_filter))
+    app.add_handler(CommandHandler("progress", handle_progress, filters=auth_filter))
+
+    # Nachrichten
     app.add_handler(MessageHandler(auth_filter & filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(auth_filter & filters.VOICE, handle_voice))
+
+    # Hausaufgaben: Foto oder Dokument
+    app.add_handler(MessageHandler(auth_filter & filters.PHOTO, handle_homework))
+    app.add_handler(MessageHandler(auth_filter & filters.Document.ALL, handle_homework))
 
     logger.info("Handlers registered. Authorized users: %s", allowed)
     return app
