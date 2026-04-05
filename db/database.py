@@ -13,3 +13,7 @@ def initialise_database(db_path: str) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+# Alias fuer Rueckwaertskompatibilitaet
+init_db = initialise_database
