@@ -11,6 +11,7 @@ Natalia kann ihren eigenen Zeitplan setzen:
 from __future__ import annotations
 import logging
 import os
+import random
 from datetime import time
 from zoneinfo import ZoneInfo
 from telegram import Update
@@ -59,7 +60,6 @@ def parse_time(time_str: str) -> time | None:
 
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Job-Funktion: sendet Erinnerung an Natalia."""
-    import random
     job = context.job
     chat_id = job.data["chat_id"]
     teacher = job.data.get("teacher", "vitali")
@@ -72,11 +72,27 @@ async def send_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.warning("Reminder send failed: %s", e)
 
 
+async def send_daily_reminder(
+    bot,
+    db_path: str,
+    telegram_id: int,
+    user_id: int,
+    teacher: str = "vitali",
+) -> None:
+    """Sendet Erinnerung direkt (ohne Job-Queue)."""
+    msgs = REMINDER_MESSAGES.get(teacher, REMINDER_MESSAGES["vitali"])
+    msg = random.choice(msgs)
+    try:
+        await bot.send_message(chat_id=telegram_id, text=msg)
+        logger.info("Daily reminder sent to %s", telegram_id)
+    except Exception as e:
+        logger.warning("Reminder send failed: %s", e)
+
+
 def schedule_reminder(app: Application, chat_id: int, reminder_time: time, teacher: str = "vitali") -> None:
     """Registriert den taegl. Reminder-Job."""
     tz = _get_tz()
     job_name = f"reminder_{chat_id}"
-    # Alten Job entfernen falls vorhanden
     current = app.job_queue.get_jobs_by_name(job_name)
     for job in current:
         job.schedule_removal()
@@ -109,7 +125,7 @@ async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if user_repo:
         uid = user_repo.get_or_create_user(user.id, user.first_name or "")
         teacher = user_repo.get_teacher(uid)
-        # Reminder-Zeit in DB speichern
+
         def _save(t_str):
             try:
                 user_repo._db.execute(
@@ -119,6 +135,9 @@ async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
                 user_repo._db.commit()
             except Exception:
                 pass
+    else:
+        def _save(t_str):
+            pass
 
     teacher_labels = {"vitali": "Vitali", "dering": "Dering", "imperator": "der Imperator"}
     label = teacher_labels.get(teacher, "ich")
@@ -135,8 +154,7 @@ async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     if arg == "off":
         removed = remove_reminder(context.application, chat_id)
-        if user_repo:
-            _save("off")
+        _save("off")
         if removed:
             replies = {
                 "vitali":    "\U0001f44c OK, ich erinnere dich nicht mehr. Du kannst jederzeit /remind 09:00 setzen.",
@@ -158,8 +176,7 @@ async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     schedule_reminder(context.application, chat_id, t, teacher)
-    if user_repo:
-        _save(arg)
+    _save(arg)
 
     replies = {
         "vitali":    f"\u23f0 Erledigt! {label} erinnert dich taeglich um {arg} Uhr. /remind off zum Deaktivieren.",
