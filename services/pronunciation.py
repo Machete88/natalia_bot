@@ -1,69 +1,114 @@
-"""Aussprache-Check: Nutzer spricht deutsches Wort -> Whisper transkribiert -> Bewertung."""
-from __future__ import annotations
+"""Aussprache-Feedback: Nutzer spricht ein deutsches Wort,
+Whisper transkribiert -> Bot vergleicht mit Zielwort -> bewertet.
 
+Fluss:
+1. /pronounce (oder nach /lesson automatisch) -> Bot schickt Zielwort + Mikrofon-Emoji
+2. Natalia schickt Sprachnachricht
+3. Bot transkribiert mit Whisper
+4. Bot vergleicht phonetisch -> gibt Note + Feedback
+"""
+from __future__ import annotations
 import logging
-from pathlib import Path
-from difflib import SequenceMatcher
+import os
+import difflib
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-
-def _similarity(a: str, b: str) -> float:
-    """Normalisierter Aehnlichkeitswert 0.0-1.0 (case-insensitive)."""
-    return SequenceMatcher(None, a.lower().strip(), b.lower().strip()).ratio()
+# Status-Key in context.user_data
+PRONUNCE_KEY = "pronounce_target"
 
 
-def evaluate_pronunciation(expected: str, recognised: str) -> dict:
-    """
-    Vergleicht erwartetes Wort mit dem von Whisper erkannten Text.
-    Gibt dict mit score (0-100), grade und feedback zurueck.
-    """
-    score = round(_similarity(expected, recognised) * 100)
-
-    if score >= 90:
-        grade = "perfect"
-    elif score >= 70:
-        grade = "good"
-    elif score >= 50:
-        grade = "ok"
-    else:
-        grade = "try_again"
-
-    return {
-        "expected": expected,
-        "recognised": recognised,
-        "score": score,
-        "grade": grade,
+def _normalize(text: str) -> str:
+    """Kleinschreiben, Sonderzeichen normalisieren."""
+    text = text.lower().strip()
+    replacements = {
+        "ae": "ae", "oe": "oe", "ue": "ue",
+        "\u00e4": "ae", "\u00f6": "oe", "\u00fc": "ue",
+        "\u00df": "ss",
     }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    # Nur Buchstaben behalten
+    return "".join(c for c in text if c.isalpha() or c == " ")
 
 
-FEEDBACK = {
-    "vitali": {
-        "perfect":   "\U0001f31f Отлично! Почти идеально! *{expected}* \U0001f44f",
-        "good":      "\U0001f44d Хорошо! Почти правильно! ({score}%). Ещё раз:",
-        "ok":        "\u26a0\ufe0f Неплохо — я услышал *{recognised}* ({score}%). Попробуй ещё: *{expected}*",
-        "try_again": "\u274c Не совсем — я услышал *{recognised}*. Правильно: *{expected}*. Попробуй ещё раз!",
-    },
-    "dering": {
-        "perfect":   "\u2705 Верно. *{expected}*",
-        "good":      "\U0001f4ca Удовлетворительно ({score}%). Правильно: *{expected}*",
-        "ok":        "\u26a0\ufe0f Распознано: *{recognised}* ({score}%). Ожидалось: *{expected}*",
-        "try_again": "\u274c Неверно. Ожидалось *{expected}*, распознано *{recognised}*.",
-    },
-    "imperator": {
-        "perfect":   "\U0001f525 *{expected}*. Идеально.",
-        "good":      "\U0001f4aa Хорошо ({score}%). Ещё раз.",
-        "ok":        "\u26a0\ufe0f {score}%. Повтори: *{expected}*",
-        "try_again": "\u274c {score}%. Ещё раз. Слово: *{expected}*",
-    },
-}
+def score_pronunciation(target: str, spoken: str) -> dict:
+    """Berechnet Aussprache-Score.
+    Gibt {'score': 0-100, 'grade': str, 'feedback': str} zurueck.
+    """
+    t = _normalize(target)
+    s = _normalize(spoken)
+
+    if not s:
+        return {"score": 0, "grade": "F", "feedback": "Nichts erkannt. Bitte nochmal versuchen."}
+
+    # Aehnlichkeit berechnen
+    ratio = difflib.SequenceMatcher(None, t, s).ratio()
+    score = int(ratio * 100)
+
+    # Exakter Match (inkl. kleine Variationen)
+    if t == s:
+        score = 100
+
+    # Note vergeben
+    if score >= 90:
+        grade, feedback = "A", "Perfekt! \U0001f3af"
+    elif score >= 75:
+        grade, feedback = "B", "Sehr gut! \U0001f44d"
+    elif score >= 60:
+        grade, feedback = "C", "Gut, aber noch etwas Uebung. \U0001f4aa"
+    elif score >= 40:
+        grade, feedback = "D", "Weiter ueben! \U0001f4da"
+    else:
+        grade, feedback = "F", "Nochmal bitte! \U0001f501"
+
+    # Hinweis auf spezifische Unterschiede
+    if t != s and score < 90:
+        t_words = t.split()
+        s_words = s.split()
+        diff_hints = []
+        for tw, sw in zip(t_words, s_words):
+            if tw != sw:
+                diff_hints.append(f"'{sw}' → '{tw}'")
+        if diff_hints:
+            feedback += f"\n\U0001f4ac Korrektur: {', '.join(diff_hints[:2])}"
+
+    return {"score": score, "grade": grade, "feedback": feedback}
 
 
-def format_feedback(result: dict, teacher: str) -> str:
-    tmpl = FEEDBACK.get(teacher, FEEDBACK["vitali"])[result["grade"]]
-    return tmpl.format(**result)
+def build_pronounce_prompt(word_de: str, teacher: str) -> str:
+    """Baut Aufforderungs-Nachricht zum Aussprechen."""
+    prompts = {
+        "vitali":    f"\U0001f3a4 Sprich dieses Wort auf Deutsch:\n\n*{word_de}*\n\nSchick mir eine Sprachnachricht!",
+        "dering":    f"\U0001f3a4 Sprich: *{word_de}*",
+        "imperator": f"\U0001f525 AUSSPRACHE-TRAINING:\n*{word_de}*\n\nJetzt sprechen!",
+    }
+    return prompts.get(teacher, prompts["vitali"])
 
 
-PRONUNCIATION_TRIGGER_PHRASES = {
-    "ru": ["произнеси", "повтори", "скажи", "прочитай"],
-}
+def build_result_message(word_de: str, result: dict, teacher: str) -> str:
+    """Baut Ergebnis-Nachricht."""
+    score = result["score"]
+    grade = result["grade"]
+    feedback = result["feedback"]
+
+    bars = int(score / 10)
+    bar = "\U0001f7e9" * bars + "\u2b1c" * (10 - bars)
+
+    base = (
+        f"\U0001f3a4 *Aussprache von '{word_de}'*\n\n"
+        f"{bar} {score}/100\n"
+        f"Note: **{grade}**\n\n"
+        f"{feedback}"
+    )
+
+    if score < 60:
+        tips = {
+            "vitali":    "\n\n\U0001f4a1 Tipp: Hoer dir das Wort nochmal an und versuch es erneut!",
+            "dering":    "\n\n\U0001f4a1 Nochmal ueben.",
+            "imperator": "\n\n\U0001f525 Inakzeptabel. Nochmal.",
+        }
+        base += tips.get(teacher, tips["vitali"])
+
+    return base

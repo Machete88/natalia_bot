@@ -1,133 +1,169 @@
-"""Taeglich geplante Lern-Erinnerungen."""
-from __future__ import annotations
+"""Taegliche Lern-Erinnerung per Telegram.
 
+Konfiguration in .env:
+  DAILY_REMINDER_TIME=09:00
+  TIMEZONE=Europe/Berlin
+
+Natalia kann ihren eigenen Zeitplan setzen:
+  /remind 08:30  -> Erinnerung um 08:30
+  /remind off    -> Erinnerung deaktivieren
+"""
+from __future__ import annotations
 import logging
-import sqlite3
-from datetime import datetime, timedelta
+import os
+from datetime import time
+from zoneinfo import ZoneInfo
+from telegram import Update
+from telegram.ext import ContextTypes, Application
 
 logger = logging.getLogger(__name__)
 
-REMINDER_MSGS = {
+REMINDER_MESSAGES = {
     "vitali": [
-        "\U0001f31e Доброе утро, Наташа! Сегодня ещё не учили. У нас есть 5 новых слов — /lesson \U0001f60a",
-        "\U0001f4da Наташа! Каждый день немножко — это уже очень много. Начнём? /lesson",
-        "\U0001f1e9\U0001f1ea Германия ждёт! Сегодня ещё 5 слов и /quiz — и ты будешь чуть ближе \U0001f60a",
+        "\U0001f31e Guten Morgen, Natalia! Zeit fuer deine taegliche Deutsch-Lektion. /lesson",
+        "\U0001f4da Heute wieder ein bisschen Deutsch? /lesson oder /quiz",
+        "\U0001f1e9\U0001f1ea Dein Deutsch wartet auf dich! Nur 5 Minuten. /lesson",
+        "\U0001f525 Streak halten! Lern heute deine Vokabeln. /quiz",
     ],
     "dering": [
-        "\U0001f4cb Сегодня ещё нет записи о прохождении занятия. /lesson",
-        "\u23f0 Время учиться. /lesson или /quiz",
-        "Урок ожидает. /lesson",
+        "\U0001f1e9\U0001f1ea Guten Morgen! Deine Lektion wartet. /lesson",
+        "\U0001f4d6 Heute wieder Deutsch? Los geht's! /quiz",
+        "\U0001f525 Keine Pause! Lern weiter. /lesson",
+        "\U0001f4aa Ein kurzes Quiz? /quiz",
     ],
     "imperator": [
-        "\U0001f525 Сегодня пока нет занятия. /lesson",
-        "\U0001f525 /quiz. Слова ждут.",
-        "\U0001f525 Немецкий не учит себя сам. /lesson",
+        "\U0001f525 STEH AUF. LERN. JETZT. /lesson",
+        "\U0001f4aa Kein Ausrede. Deutsch. Jetzt. /quiz",
+        "\U0001f1e9\U0001f1ea Der Imperator erwartet Fortschritt. /lesson",
+        "\U0001f525 Taegliches Training. Keine Ausnahmen. /quiz",
     ],
 }
 
-STREAK_MSGS = {
-    "vitali": {
-        3:  "\U0001f525 3 дня подряд! Ты на верном пути, Наташа!",
-        7:  "\U0001f38a Неделя без перерыва! Я такими горжусь \U0001f60a",
-        14: "\U0001f3c6 2 недели! Это уже настоящая привычка!",
-        30: "\U0001f947 Месяц каждый день! Наташа, ты просто фантастическая!",
-    },
-    "dering": {
-        3:  "3-дневная серия. Продолжай.",
-        7:  "7 дней. Хорошо.",
-        14: "14 дней. Серьёзный подход.",
-        30: "30 дней. Уважаю.",
-    },
-    "imperator": {
-        3:  "\U0001f525 3. Продолжай.",
-        7:  "\U0001f525 7. Хорошо.",
-        14: "\U0001f525 14. Сильно.",
-        30: "\U0001f947 30. Император доволен.",
-    },
-}
 
-
-def get_or_create_streak(db_path: str, user_id: int) -> int:
-    """Gibt aktuellen Streak zurueck (Tage in Folge gelernt)."""
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT value FROM user_preferences WHERE user_id=? AND key='streak'",
-            (user_id,),
-        ).fetchone()
-        return int(row["value"]) if row else 0
-
-
-def update_streak(db_path: str, user_id: int) -> int:
-    """Aktualisiert den Streak nach einer Lern-Session. Gibt neuen Streak zurueck."""
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-
-        # Letzter Lern-Tag
-        row = conn.execute(
-            "SELECT value FROM user_preferences WHERE user_id=? AND key='last_learned'",
-            (user_id,),
-        ).fetchone()
-
-        today = datetime.now().strftime("%Y-%m-%d")
-        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-
-        streak_row = conn.execute(
-            "SELECT value FROM user_preferences WHERE user_id=? AND key='streak'",
-            (user_id,),
-        ).fetchone()
-        current_streak = int(streak_row["value"]) if streak_row else 0
-
-        if row:
-            last_date = row["value"]
-            if last_date == today:
-                return current_streak  # Heute schon gezaehlt
-            elif last_date == yesterday:
-                new_streak = current_streak + 1
-            else:
-                new_streak = 1  # Luecke -> Reset
-        else:
-            new_streak = 1
-
-        conn.execute(
-            "INSERT OR REPLACE INTO user_preferences (user_id, key, value) VALUES (?,?,?)",
-            (user_id, "last_learned", today),
-        )
-        conn.execute(
-            "INSERT OR REPLACE INTO user_preferences (user_id, key, value) VALUES (?,?,?)",
-            (user_id, "streak", str(new_streak)),
-        )
-        return new_streak
-
-
-async def send_daily_reminder(
-    bot,
-    db_path: str,
-    telegram_id: int,
-    user_id: int,
-    teacher: str,
-) -> None:
-    """Sendet taeglich eine Erinnerung falls der Nutzer heute noch nicht gelernt hat."""
-    import random
-    with sqlite3.connect(db_path) as conn:
-        conn.row_factory = sqlite3.Row
-        row = conn.execute(
-            "SELECT value FROM user_preferences WHERE user_id=? AND key='last_learned'",
-            (user_id,),
-        ).fetchone()
-        today = datetime.now().strftime("%Y-%m-%d")
-        if row and row["value"] == today:
-            return  # Heute schon gelernt
-
-    msgs = REMINDER_MSGS.get(teacher, REMINDER_MSGS["vitali"])
-    msg = random.choice(msgs)
-
-    streak = get_or_create_streak(db_path, user_id)
-    if streak > 0:
-        streak_note = f"\n\U0001f525 Серия: {streak} дней подряд!"
-        msg = msg + streak_note
-
+def _get_tz() -> ZoneInfo:
+    tz_name = os.getenv("TIMEZONE", "Europe/Berlin")
     try:
-        await bot.send_message(chat_id=telegram_id, text=msg)
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo("Europe/Berlin")
+
+
+def parse_time(time_str: str) -> time | None:
+    """Parst '09:30' -> time(9, 30). Gibt None zurueck bei Fehler."""
+    try:
+        h, m = time_str.strip().split(":")
+        return time(int(h), int(m))
+    except Exception:
+        return None
+
+
+async def send_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Job-Funktion: sendet Erinnerung an Natalia."""
+    import random
+    job = context.job
+    chat_id = job.data["chat_id"]
+    teacher = job.data.get("teacher", "vitali")
+    msgs = REMINDER_MESSAGES.get(teacher, REMINDER_MESSAGES["vitali"])
+    msg = random.choice(msgs)
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=msg)
+        logger.info("Daily reminder sent to %s", chat_id)
     except Exception as e:
-        logger.warning("Reminder send failed for %s: %s", telegram_id, e)
+        logger.warning("Reminder send failed: %s", e)
+
+
+def schedule_reminder(app: Application, chat_id: int, reminder_time: time, teacher: str = "vitali") -> None:
+    """Registriert den taegl. Reminder-Job."""
+    tz = _get_tz()
+    job_name = f"reminder_{chat_id}"
+    # Alten Job entfernen falls vorhanden
+    current = app.job_queue.get_jobs_by_name(job_name)
+    for job in current:
+        job.schedule_removal()
+    app.job_queue.run_daily(
+        send_reminder,
+        time=reminder_time.replace(tzinfo=tz),
+        name=job_name,
+        data={"chat_id": chat_id, "teacher": teacher},
+    )
+    logger.info("Reminder scheduled for %s at %s (%s)", chat_id, reminder_time, teacher)
+
+
+def remove_reminder(app: Application, chat_id: int) -> bool:
+    job_name = f"reminder_{chat_id}"
+    jobs = app.job_queue.get_jobs_by_name(job_name)
+    for job in jobs:
+        job.schedule_removal()
+    return len(jobs) > 0
+
+
+async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler fuer /remind HH:MM oder /remind off."""
+    args = context.args
+    chat_id = update.effective_chat.id
+    services = context.bot_data.get("services", {})
+    user_repo = services.get("user_repo")
+    user = update.effective_user
+
+    teacher = "vitali"
+    if user_repo:
+        uid = user_repo.get_or_create_user(user.id, user.first_name or "")
+        teacher = user_repo.get_teacher(uid)
+        # Reminder-Zeit in DB speichern
+        def _save(t_str):
+            try:
+                user_repo._db.execute(
+                    "INSERT OR REPLACE INTO user_preferences (user_id, key, value) VALUES (?,?,?)",
+                    (uid, "reminder_time", t_str)
+                )
+                user_repo._db.commit()
+            except Exception:
+                pass
+
+    teacher_labels = {"vitali": "Vitali", "dering": "Dering", "imperator": "der Imperator"}
+    label = teacher_labels.get(teacher, "ich")
+
+    if not args:
+        await update.message.reply_text(
+            "\U0001f4ac Nutzung:\n"
+            "/remind 09:00 — Erinnerung um 09:00 Uhr\n"
+            "/remind off — Erinnerung deaktivieren"
+        )
+        return
+
+    arg = args[0].lower()
+
+    if arg == "off":
+        removed = remove_reminder(context.application, chat_id)
+        if user_repo:
+            _save("off")
+        if removed:
+            replies = {
+                "vitali":    "\U0001f44c OK, ich erinnere dich nicht mehr. Du kannst jederzeit /remind 09:00 setzen.",
+                "dering":    "\U0001f44c Erinnerung deaktiviert.",
+                "imperator": "\U0001f525 Deaktiviert. Aber vergiss nicht selbst zu lernen!",
+            }
+        else:
+            replies = {
+                "vitali":    "Es gab keine aktive Erinnerung.",
+                "dering":    "Keine Erinnerung aktiv.",
+                "imperator": "Keine aktive Erinnerung gefunden.",
+            }
+        await update.message.reply_text(replies.get(teacher, replies["vitali"]))
+        return
+
+    t = parse_time(arg)
+    if not t:
+        await update.message.reply_text("\u274c Format: /remind 09:30 (HH:MM)")
+        return
+
+    schedule_reminder(context.application, chat_id, t, teacher)
+    if user_repo:
+        _save(arg)
+
+    replies = {
+        "vitali":    f"\u23f0 Erledigt! {label} erinnert dich taeglich um {arg} Uhr. /remind off zum Deaktivieren.",
+        "dering":    f"\u23f0 Erinnerung gesetzt: {arg} Uhr.",
+        "imperator": f"\U0001f525 {arg} Uhr. Ich erwarte dich. Sei bereit.",
+    }
+    await update.message.reply_text(replies.get(teacher, replies["vitali"]))
