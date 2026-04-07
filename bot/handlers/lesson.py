@@ -6,8 +6,6 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from services.session_manager import get_session, LearningPhase
-
 logger = logging.getLogger(__name__)
 
 TEACHER_LESSON_INTRO = {
@@ -58,13 +56,6 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(msg)
         return
 
-    # Session starten
-    session = get_session(context.user_data)
-    session.start_lesson([
-        {"vocab_id": s.vocab_id, "word_de": s.word_de, "word_ru": s.word_ru, "example_de": s.example_de}
-        for s in steps
-    ])
-
     # Intro + Vokabeln - genau EIN reply_text
     intro = TEACHER_LESSON_INTRO.get(teacher, TEACHER_LESSON_INTRO["vitali"]).format(count=len(steps))
     lines = [intro]
@@ -73,6 +64,20 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         lines.append("")
     full_text = "\n".join(lines)
     await update.message.reply_text(full_text, parse_mode="Markdown")
+
+    # Session starten - nur wenn user_data ein echtes dict ist
+    user_data = context.user_data
+    settings = context.bot_data.get("settings")
+    if settings and isinstance(user_data, dict):
+        try:
+            from services.session_manager import get_session
+            session = get_session(user_data)
+            session.start_lesson([
+                {"vocab_id": s.vocab_id, "word_de": s.word_de, "word_ru": s.word_ru, "example_de": s.example_de}
+                for s in steps
+            ])
+        except Exception as e:
+            logger.warning("Session init failed: %s", e)
 
     # Lernkarten als Bilder
     try:
@@ -103,10 +108,14 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         except Exception as e:
             logger.warning("TTS for lesson failed: %s", e)
 
-    # Nach Lektion: Uebung starten (nur wenn settings vorhanden)
-    settings = context.bot_data.get("settings")
-    if settings:
-        await _start_practice(update, context, teacher, session)
+    # Nach Lektion: Uebung starten (nur wenn settings und echtes user_data)
+    if settings and isinstance(user_data, dict):
+        try:
+            from services.session_manager import get_session
+            session = get_session(user_data)
+            await _start_practice(update, context, teacher, session)
+        except Exception as e:
+            logger.warning("Practice start failed: %s", e)
 
 
 async def _start_practice(

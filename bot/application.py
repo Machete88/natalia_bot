@@ -50,7 +50,7 @@ async def build_application(settings: Settings, services: dict) -> Application:
     app.add_handler(CommandHandler("remind",     handle_remind,      filters=auth_filter))
     app.add_handler(CommandHandler("endsupport", deactivate_support, filters=auth_filter))
 
-    # Inline-Keyboard Callbacks (Quiz-Antworten, Teacher-Wechsel, etc.)
+    # Inline-Keyboard Callbacks
     app.add_handler(CallbackQueryHandler(handle_callback))
 
     # Messages
@@ -59,7 +59,10 @@ async def build_application(settings: Settings, services: dict) -> Application:
     app.add_handler(MessageHandler(auth_filter & filters.PHOTO,        handle_homework))
     app.add_handler(MessageHandler(auth_filter & filters.Document.ALL, handle_homework))
 
-    _schedule_user_reminders(app, settings)
+    try:
+        _schedule_user_reminders(app, settings)
+    except Exception as e:
+        logger.warning("Could not schedule reminders: %s", e)
 
     logger.info("Handlers registered. Authorized users: %s", allowed)
     return app
