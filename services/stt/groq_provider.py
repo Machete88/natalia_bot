@@ -1,4 +1,4 @@
-"""Groq Whisper STT Provider - kostenlos, cloud-basiert."""
+"""Groq Whisper STT Provider — auto language detection (de + ru mixed)."""
 from __future__ import annotations
 
 import logging
@@ -11,6 +11,13 @@ from services.stt.base import BaseSTTProvider
 logger = logging.getLogger(__name__)
 
 GROQ_STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+
+# Groq Whisper: prompt hint improves mixed-language transcription accuracy.
+# We explicitly mention both languages so the model doesn't force-fit to one.
+_PROMPT_HINT = (
+    "Natasha lernt Deutsch. Sie spricht Russisch und Deutsch gemischt. "
+    "Наташа учит немецкий язык. Она говорит по-русски и по-немецки."
+)
 
 
 class GroqSTTProvider(BaseSTTProvider):
@@ -28,7 +35,6 @@ class GroqSTTProvider(BaseSTTProvider):
             with open(audio_path, "rb") as f:
                 audio_bytes = f.read()
 
-            # Dateiendung bestimmen
             suffix = audio_path.suffix.lower().lstrip(".") or "ogg"
             mime = f"audio/{suffix}"
 
@@ -39,7 +45,8 @@ class GroqSTTProvider(BaseSTTProvider):
                     files={
                         "file": (audio_path.name, audio_bytes, mime),
                         "model": (None, self._model),
-                        "language": (None, "ru"),
+                        # NO language= field → Whisper auto-detects de/ru/mixed
+                        "prompt": (None, _PROMPT_HINT),
                         "response_format": (None, "json"),
                     },
                 )
@@ -47,7 +54,7 @@ class GroqSTTProvider(BaseSTTProvider):
                 data = resp.json()
                 text = data.get("text", "").strip()
                 logger.info("Groq STT: '%s'", text[:80])
-                return text or "[\u0433\u043e\u043b\u043e\u0441 \u0440\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u043d, \u043d\u043e \u0442\u0435\u043a\u0441\u0442 \u043f\u0443\u0441\u0442\u043e\u0439]"
+                return text or "[голос распознан, но текст пустой]"
         except Exception as e:
             logger.error("Groq STT failed: %s", e)
             return ""

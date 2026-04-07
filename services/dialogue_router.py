@@ -53,18 +53,36 @@ LEVEL_INSTRUCTIONS: Dict[str, str] = {
 TEACHING_RULES = """
 WICHTIGE REGELN FÜR DEN UNTERRICHT:
 1. WIEDERHOLE NIEMALS einfach was Natasha gesagt hat
-2. Wenn Natasha Deutsch übt: korrigiere Fehler sofort, erkläre die Regel
-3. Wenn Natasha ein deutsches Wort fragt: gib Bedeutung + Beispielsatz + Übersetzung
-4. Wenn Natasha auf Russisch schreibt: antworte auf Russisch, aber gib deutschen Wortschatz dazu
-5. Stelle am Ende IMMER eine kurze Übungsfrage oder Aufgabe
-6. Halte Antworten unter 150 Wörtern
-7. Sei nie langweilig — variiere Aufgaben und Erklärungen
+2. Wenn Natasha Deutsch übt (auch mit Fehlern): korrigiere sofort und erkläre die Regel
+3. Wenn Natasha GEMISCHT spricht (Russisch + Deutsch): das ist gut! Erkenne den deutschen Teil,
+   korrigiere wenn nötig, lobe den Versuch auf Deutsch zu sprechen
+4. Wenn Natasha ein deutsches Wort fragt: gib Bedeutung + Beispielsatz + Übersetzung
+5. Wenn Natasha auf Russisch schreibt/spricht: antworte auf Russisch, gib deutschen Wortschatz dazu
+6. Stelle am Ende IMMER eine kurze Übungsfrage oder Aufgabe
+7. Halte Antworten unter 150 Wörtern
+8. Sei nie langweilig — variiere Aufgaben und Erklärungen
 """
 
 FALLBACK_MESSAGES = [
     "Извини, что-то пошло не так. Давай попробуем снова?",
     "Прости, небольшая пауза. Напиши ещё раз!",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Language detection helper (lightweight, no external deps)
+# ---------------------------------------------------------------------------
+def _detect_language(text: str) -> str:
+    """Returns 'de', 'ru', or 'mixed'."""
+    cyrillic = sum(1 for c in text if '\u0400' <= c <= '\u04FF')
+    latin = sum(1 for c in text if 'a' <= c.lower() <= 'z')
+    if cyrillic > 0 and latin > 2:
+        return "mixed"
+    if cyrillic > latin:
+        return "ru"
+    if latin > 0:
+        return "de"
+    return "ru"
 
 
 # ---------------------------------------------------------------------------
@@ -93,19 +111,27 @@ class DialogueRouter:
             history_lines.append(f"{speaker}: {m['content']}")
         history_text = "\n".join(history_lines) if history_lines else "(нет истории)"
 
-        mode_context = ""
+        # Detect which language(s) Natasha used
+        lang = _detect_language(user_text)
+        if lang == "de":
+            lang_hint = "[Natasha spricht DEUTSCH — korrigiere Fehler, lobe den Versuch, erkläre Regel]\n"
+        elif lang == "mixed":
+            lang_hint = "[Natasha spricht GEMISCHT (Russisch+Deutsch) — erkenne deutschen Teil, korrigiere, lobe]\n"
+        else:
+            lang_hint = "[Natasha spricht Russisch — antworte auf Russisch, füge deutschen Wortschatz ein]\n"
+
+        mode_context = lang_hint
         if mode == "voice_practice":
-            mode_context = (
-                "\n[Natasha übt gerade mündliches Deutsch. Sie hat eine Sprachnachricht geschickt. "
-                "Bewerte ihre Aussprache/Grammatik und korrigiere wenn nötig.]\n"
+            mode_context += (
+                "[Natasha übt gerade mündliches Deutsch. Bewerte ihre Aussprache/Grammatik.]\n"
             )
         elif mode == "after_lesson":
-            mode_context = (
-                "\n[Natasha hat gerade eine Vokabellektion abgeschlossen. "
-                "Fasse kurz zusammen was sie gelernt hat und stelle eine Übungsfrage dazu.]\n"
+            mode_context += (
+                "[Natasha hat gerade eine Vokabellektion abgeschlossen. "
+                "Fasse kurz zusammen und stelle eine Übungsfrage.]\n"
             )
         elif extra_context:
-            mode_context = f"\n[Kontext: {extra_context}]\n"
+            mode_context += f"[Kontext: {extra_context}]\n"
 
         prompt = (
             f"{IMPERATOR_PERSONA}\n\n"

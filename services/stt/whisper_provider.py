@@ -1,37 +1,47 @@
+"""Local Whisper STT Provider — auto language detection."""
 from __future__ import annotations
+
+import logging
 from pathlib import Path
 
 from services.stt.base import BaseSTTProvider
-import whisper
 
-# Sprachen die der Bot erwartet (Russisch + Deutsch)
-_ALLOWED_LANGS = {"ru", "de"}
-_FALLBACK_LANG = "ru"
+logger = logging.getLogger(__name__)
+
+_PROMPT_HINT = (
+    "Natasha lernt Deutsch. Sie spricht Russisch und Deutsch gemischt. "
+    "Наташа учит немецкий язык. Она говорит по-русски и по-немецки."
+)
 
 
-class WhisperProvider(BaseSTTProvider):
-    def __init__(self, model: str = "small") -> None:
-        self._model_name = model
-        self._model = whisper.load_model(model)
+class WhisperLocalProvider(BaseSTTProvider):
+    def __init__(self, model_size: str = "small") -> None:
+        self._model_size = model_size
+        self._model = None
+
+    def _load_model(self):
+        if self._model is None:
+            try:
+                import whisper
+                self._model = whisper.load_model(self._model_size)
+                logger.info("Whisper model '%s' loaded.", self._model_size)
+            except ImportError:
+                logger.error("openai-whisper not installed. Run: pip install openai-whisper")
+                raise
 
     async def transcribe(self, audio_path: Path) -> str:
-        # Schritt 1: Sprache automatisch erkennen
-        audio = whisper.load_audio(str(audio_path))
-        audio_pad = whisper.pad_or_trim(audio)
-        mel = whisper.log_mel_spectrogram(audio_pad).to(self._model.device)
-        _, probs = self._model.detect_language(mel)
-
-        # Wahrscheinlichkeiten fuer ru und de
-        prob_ru = probs.get("ru", 0.0)
-        prob_de = probs.get("de", 0.0)
-
-        # Nur ru oder de erlaubt — nimm die wahrscheinlichere
-        if prob_de > prob_ru:
-            detected = "de"
-        else:
-            detected = "ru"
-
-        # Schritt 2: Transkribieren mit erkannter Sprache
-        result = self._model.transcribe(str(audio_path), language=detected)
-        text = result.get("text", "").strip()
-        return text or "[голос распознан, но текст пустой]"
+        self._load_model()
+        try:
+            result = self._model.transcribe(
+                str(audio_path),
+                # No language= → auto-detect de/ru
+                initial_prompt=_PROMPT_HINT,
+                fp16=False,
+            )
+            text = (result.get("text") or "").strip()
+            detected = result.get("language", "?")
+            logger.info("Whisper STT [%s]: '%s'", detected, text[:80])
+            return text or "[голос распознан, но текст пустой]"
+        except Exception as e:
+            logger.error("Whisper transcription failed: %s", e)
+            return ""
