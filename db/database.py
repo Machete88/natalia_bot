@@ -14,6 +14,7 @@ def init_db(db_path: str) -> None:
                 name        TEXT DEFAULT '',
                 teacher     TEXT DEFAULT 'vitali',
                 level       TEXT DEFAULT 'a1',
+                last_seen   TIMESTAMP,
                 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -35,6 +36,26 @@ def init_db(db_path: str) -> None:
                 UNIQUE(user_id, vocab_id)
             );
 
+            CREATE TABLE IF NOT EXISTS vocab_items (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                level      TEXT DEFAULT 'beginner',
+                topic      TEXT DEFAULT 'general',
+                word_de    TEXT NOT NULL,
+                word_ru    TEXT NOT NULL,
+                example_de TEXT DEFAULT '',
+                example_ru TEXT DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS vocab_progress (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id        INTEGER NOT NULL,
+                vocab_id       INTEGER NOT NULL,
+                status         TEXT DEFAULT 'new',
+                correct_streak INTEGER DEFAULT 0,
+                last_seen      TEXT,
+                UNIQUE(user_id, vocab_id)
+            );
+
             CREATE TABLE IF NOT EXISTS reminders (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id     INTEGER NOT NULL REFERENCES users(id),
@@ -42,6 +63,15 @@ def init_db(db_path: str) -> None:
                 remind_time TEXT NOT NULL,
                 active      INTEGER DEFAULT 1,
                 UNIQUE(user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS memory (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL,
+                role       TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                teacher    TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS conversation_history (
