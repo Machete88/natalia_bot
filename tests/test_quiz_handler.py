@@ -22,7 +22,7 @@ def fake_settings(tmp_path):
     with sqlite3.connect(db_path) as conn:
         conn.execute("CREATE TABLE vocab_items (id INTEGER PRIMARY KEY, level TEXT, topic TEXT, word_de TEXT, word_ru TEXT, example_de TEXT, example_ru TEXT)")
         conn.execute("CREATE TABLE vocab_progress (id INTEGER PRIMARY KEY, user_id INTEGER, vocab_id INTEGER, status TEXT DEFAULT 'new', correct_streak INTEGER DEFAULT 0, last_seen TEXT, UNIQUE(user_id, vocab_id))")
-        for i, w in enumerate([("beginner","greetings","Hallo","Привет","Hi","Hi"), ("beginner","greetings","Danke","Спасибо","Danke!","Danke!"), ("beginner","feelings","muede","устал","Ich bin muede","Ich bin muede"), ("beginner","family","Mutter","мама","Meine Mutter","Meine Mutter")]):
+        for i, w in enumerate([("beginner","greetings","Hallo","\u041f\u0440\u0438\u0432\u0435\u0442","Hi","Hi"), ("beginner","greetings","Danke","\u0421\u043f\u0430\u0441\u0438\u0431\u043e","Danke!","Danke!"), ("beginner","feelings","muede","\u0443\u0441\u0442\u0430\u043b","Ich bin muede","Ich bin muede"), ("beginner","family","Mutter","\u043c\u0430\u043c\u0430","Meine Mutter","Meine Mutter")]):
             conn.execute("INSERT INTO vocab_items (level,topic,word_de,word_ru,example_de,example_ru) VALUES (?,?,?,?,?,?)", w)
     settings.database_path = db_path
     return settings
@@ -37,6 +37,7 @@ async def test_quiz_sends_question(fake_services, fake_settings):
     update.effective_user.first_name = "Natasha"
     update.message.text = "/quiz"
     update.message.reply_text = AsyncMock()
+    update.callback_query = None  # kein Inline-Callback
     context = MagicMock()
     context.args = []
     context.user_data = {}
@@ -55,7 +56,7 @@ async def test_quiz_correct_answer(fake_services, fake_settings):
     session = QuizSession(
         vocab_id=1,
         word_de="Hallo",
-        word_ru="Привет",
+        word_ru="\u041f\u0440\u0438\u0432\u0435\u0442",
         example_de="Hallo!",
         correct_answer="Hallo",
         options=["Hallo", "Danke", "Bitte", "muede"],
@@ -68,6 +69,7 @@ async def test_quiz_correct_answer(fake_services, fake_settings):
     update.effective_user.first_name = "Natasha"
     update.message.text = "1"  # erste Option = Hallo = korrekt
     update.message.reply_text = AsyncMock()
+    update.callback_query = None  # kein Inline-Callback
     context = MagicMock()
     context.user_data = {QUIZ_SESSION_KEY: session}
     context.bot_data = {"services": fake_services, "settings": fake_settings}
@@ -75,4 +77,4 @@ async def test_quiz_correct_answer(fake_services, fake_settings):
     await handle_quiz(update, context)
     assert update.message.reply_text.call_count >= 1
     first_call = update.message.reply_text.call_args_list[0][0][0]
-    assert "✅" in first_call
+    assert "\u2705" in first_call
