@@ -9,59 +9,67 @@ logger = logging.getLogger(__name__)
 
 PRONOUNCE_KEY = "pronounce_target"
 
+# Einheitliche Noten-Grenzen
+_GRADES = [
+    (90, "perfect"),
+    (70, "good"),
+    (50, "ok"),
+    (0,  "try_again"),
+]
+
 
 def _normalize(text: str) -> str:
     text = text.lower().strip()
-    replacements = {
-        "\u00e4": "ae", "\u00f6": "oe", "\u00fc": "ue", "\u00df": "ss",
-    }
-    for old, new in replacements.items():
+    for old, new in {"\u00e4": "ae", "\u00f6": "oe", "\u00fc": "ue", "\u00df": "ss"}.items():
         text = text.replace(old, new)
     return "".join(c for c in text if c.isalpha() or c == " ")
 
 
-def score_pronunciation(target: str, spoken: str) -> dict:
-    """Berechnet Aussprache-Score. Gibt {'score': 0-100, 'grade': str, 'feedback': str, 'word': str} zurueck."""
+def evaluate_pronunciation(target: str, spoken: str) -> dict:
+    """Bewertet Aussprache.
+    Gibt {'score': 0-100, 'grade': str, 'feedback': str, 'word': str} zurueck.
+    grade-Werte: 'perfect' | 'good' | 'ok' | 'try_again'
+    """
     t = _normalize(target)
     s = _normalize(spoken)
 
     if not s:
-        return {"score": 0, "grade": "try_again", "feedback": "Nichts erkannt. Bitte nochmal versuchen.", "word": target}
+        return {"score": 0, "grade": "try_again",
+                "feedback": "Nichts erkannt. Nochmal.", "word": target}
 
     ratio = difflib.SequenceMatcher(None, t, s).ratio()
-    score = int(ratio * 100)
-    if t == s:
-        score = 100
+    score = 100 if t == s else int(ratio * 100)
 
-    if score >= 90:
-        grade, feedback = "perfect", "Perfekt! \U0001f3af"
-    elif score >= 70:
-        grade, feedback = "good", "Sehr gut! \U0001f44d"
-    elif score >= 50:
-        grade, feedback = "ok", "Gut, aber noch etwas Uebung. \U0001f4aa"
-    else:
-        grade, feedback = "try_again", "Nochmal bitte! \U0001f501"
+    grade = "try_again"
+    for threshold, g in _GRADES:
+        if score >= threshold:
+            grade = g
+            break
+
+    feedback_map = {
+        "perfect":   "Perfekt! \U0001f3af",
+        "good":      "Gut. \U0001f44d",
+        "ok":        "Ueben. \U0001f4aa",
+        "try_again": "Nochmal. \U0001f501",
+    }
+    feedback = feedback_map[grade]
 
     if t != s and score < 90:
-        diff_hints = []
-        for tw, sw in zip(t.split(), s.split()):
-            if tw != sw:
-                diff_hints.append(f"'{sw}' \u2192 '{tw}'")
+        diff_hints = [
+            f"'{sw}' \u2192 '{tw}'"
+            for tw, sw in zip(t.split(), s.split()) if tw != sw
+        ]
         if diff_hints:
-            feedback += f"\n\U0001f4ac Korrektur: {', '.join(diff_hints[:2])}"
+            feedback += f"\n\U0001f4ac {', '.join(diff_hints[:2])}"
 
     return {"score": score, "grade": grade, "feedback": feedback, "word": target}
 
 
-def evaluate_pronunciation(target: str, spoken: str) -> dict:
-    """Bewertet Aussprache. Gibt {'score', 'grade', 'feedback', 'word'} zurueck.
-
-    grade-Werte: 'perfect' | 'good' | 'ok' | 'try_again'
-    """
-    return score_pronunciation(target, spoken)
+# Rueckwaertskompatibilitaet
+score_pronunciation = evaluate_pronunciation
 
 
-def format_feedback(result: dict, teacher: str) -> str:
+def format_feedback(result: dict, teacher: str = "imperator") -> str:
     """Formatiert Ergebnis-Nachricht fuer Telegram.
     Enthaelt immer das Zielwort (word) im Output.
     """
@@ -73,7 +81,6 @@ def format_feedback(result: dict, teacher: str) -> str:
     bars = int(score / 10)
     bar = "\U0001f7e9" * bars + "\u2b1c" * (10 - bars)
 
-    # Zielwort immer prominent einbinden
     base = (
         f"\U0001f3a4 *Aussprache-Ergebnis*\n\n"
         f"{bar} {score}/100\n"
@@ -82,24 +89,14 @@ def format_feedback(result: dict, teacher: str) -> str:
     )
 
     if score < 60:
-        tips = {
-            "vitali":    "\n\n\U0001f4a1 Tipp: Hoer dir das Wort nochmal an!",
-            "dering":    "\n\n\U0001f4a1 Nochmal ueben.",
-            "imperator": "\n\n\U0001f525 Inakzeptabel. Nochmal.",
-        }
-        base += tips.get(teacher, tips["vitali"])
+        base += "\n\n\U0001f525 Inakzeptabel. Nochmal."
 
     return base
 
 
-def build_pronounce_prompt(word_de: str, teacher: str) -> str:
-    prompts = {
-        "vitali":    f"\U0001f3a4 Sprich dieses Wort auf Deutsch:\n\n*{word_de}*\n\nSchick mir eine Sprachnachricht!",
-        "dering":    f"\U0001f3a4 Sprich: *{word_de}*",
-        "imperator": f"\U0001f525 AUSSPRACHE-TRAINING:\n*{word_de}*\n\nJetzt sprechen!",
-    }
-    return prompts.get(teacher, prompts["vitali"])
+def build_pronounce_prompt(word_de: str, teacher: str = "imperator") -> str:
+    return f"\U0001f525 AUSSPRACHE-TRAINING:\n*{word_de}*\n\nJetzt sprechen!"
 
 
-def build_result_message(word_de: str, result: dict, teacher: str) -> str:
+def build_result_message(word_de: str, result: dict, teacher: str = "imperator") -> str:
     return format_feedback(result, teacher)

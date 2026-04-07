@@ -37,7 +37,6 @@ async def build_application(settings: Settings, services: dict) -> Application:
     from bot.handlers.support import deactivate_support
     from bot.handlers.callbacks import handle_callback
 
-    # Commands
     app.add_handler(CommandHandler("start",      handle_start,       filters=auth_filter))
     app.add_handler(CommandHandler("help",       handle_help,        filters=auth_filter))
     app.add_handler(CommandHandler("lesson",     handle_lesson,      filters=auth_filter))
@@ -50,10 +49,8 @@ async def build_application(settings: Settings, services: dict) -> Application:
     app.add_handler(CommandHandler("remind",     handle_remind,      filters=auth_filter))
     app.add_handler(CommandHandler("endsupport", deactivate_support, filters=auth_filter))
 
-    # Inline-Keyboard Callbacks
     app.add_handler(CallbackQueryHandler(handle_callback))
 
-    # Messages
     app.add_handler(MessageHandler(auth_filter & filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(auth_filter & filters.VOICE,        handle_voice))
     app.add_handler(MessageHandler(auth_filter & filters.PHOTO,        handle_homework))
@@ -92,13 +89,7 @@ def _schedule_user_reminders(app: Application, settings: Settings) -> None:
             chat_id = int(telegram_id)
 
             async def _job(context, _chat_id=chat_id) -> None:
-                svc = context.bot_data.get("services", {})
-                user_repo = svc.get("user_repo")
-                teacher = "vitali"
-                if user_repo:
-                    uid = user_repo.get_or_create_user(_chat_id, "")
-                    teacher = user_repo.get_teacher(uid)
-                msgs = REMINDER_MESSAGES.get(teacher, REMINDER_MESSAGES["vitali"])
+                msgs = REMINDER_MESSAGES.get("imperator", [])
                 try:
                     await context.bot.send_message(chat_id=_chat_id, text=random.choice(msgs))
                 except Exception as e:

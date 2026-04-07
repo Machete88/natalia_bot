@@ -14,6 +14,7 @@ from telegram.ext import ContextTypes
 logger = logging.getLogger(__name__)
 
 QUIZ_SESSION_KEY = "quiz_session"
+TEACHER = "imperator"
 
 
 @dataclass
@@ -102,42 +103,17 @@ def _update_vocab_progress(db_path: str, user_id: int, vocab_id: int, correct: b
         return status
 
 
-QUIZ_QUESTION_TPLS = {
-    "vitali": "\U0001f914 *Как по-немецки:* {word_ru}\n\nВыбери ответ!",
-    "dering": "\U0001f4dd *Переведите:* {word_ru}",
-    "imperator": "\U0001f525 {word_ru}",
-}
+QUIZ_QUESTION_TPL = "\U0001f525 {word_ru}"
 
-CORRECT_TPLS = {
-    "vitali": [
-        "\u2705 Верно! *{word_de}* \U0001f44d",
-        "\u2705 Отлично! *{word_de}* — молодец!",
-        "\U0001f31f Да! *{word_de}*. Продолжай!",
-    ],
-    "dering": [
-        "\u2705 *{word_de}* — верно.",
-        "\u2705 Правильно. *{word_de}*",
-    ],
-    "imperator": [
-        "\u2705 *{word_de}*.",
-        "\u2705 Верно. *{word_de}*.",
-    ],
-}
+CORRECT_TPLS = [
+    "\u2705 *{word_de}*.",
+    "\u2705 Richtig. *{word_de}*.",
+]
 
-WRONG_TPLS = {
-    "vitali": [
-        "\u274c Нет, но не беда! Правильный ответ: *{word_de}*\n— запомни: _{example_de}_",
-        "\u274c Почти! Правильно: *{word_de}*\n— пример: _{example_de}_",
-    ],
-    "dering": [
-        "\u274c Неверно. Правильный ответ: *{word_de}*.",
-        "\u274c Ошибка. *{word_de}* — _{example_de}_",
-    ],
-    "imperator": [
-        "\u274c Нет. *{word_de}*.",
-        "\u274c Ошибка. *{word_de}*.",
-    ],
-}
+WRONG_TPLS = [
+    "\u274c Nein. *{word_de}*.",
+    "\u274c Falsch. *{word_de}*.",
+]
 
 
 def _make_inline_keyboard(options: list) -> InlineKeyboardMarkup:
@@ -154,12 +130,11 @@ def _make_inline_keyboard(options: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-async def _call(fn, *args, **kwargs):
-    """Ruft fn auf und awaitet das Ergebnis nur wenn es awaitable ist."""
-    result = fn(*args, **kwargs)
+async def _safe_send(send_fn, *args, **kwargs) -> None:
+    """Ruft send_fn auf und awaitet nur wenn noetig."""
+    result = send_fn(*args, **kwargs)
     if inspect.isawaitable(result):
-        return await result
-    return result
+        await result
 
 
 async def handle_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -171,23 +146,22 @@ async def handle_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not user_repo or not settings:
         msg = update.message or (update.callback_query.message if update.callback_query else None)
         if msg:
-            await _call(msg.reply_text, "Сервис временно недоступен.")
+            await _safe_send(msg.reply_text, "Service voruebergehend nicht verfuegbar.")
         return
 
     user = update.effective_user
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
-    teacher = user_repo.get_teacher(user_id)
     level = user_repo.get_level(user_id)
 
     session: Optional[QuizSession] = context.user_data.get(QUIZ_SESSION_KEY)
     if update.message:
         text = update.message.text.strip() if update.message.text else ""
         if session and text in {"1", "2", "3", "4"}:
-            await _evaluate_answer(update, context, session, int(text) - 1, settings, user_id, teacher, level)
+            await _evaluate_answer(update, context, session, int(text) - 1, settings, user_id, level)
             return
 
     context.user_data.pop(QUIZ_SESSION_KEY, None)
-    await _send_next_question(update, context, settings.database_path, user_id, teacher, level)
+    await _send_next_question(update, context, settings.database_path, user_id, level)
 
 
 async def handle_quiz_inline(
@@ -203,16 +177,15 @@ async def handle_quiz_inline(
 
     user = update.effective_user
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
-    teacher = user_repo.get_teacher(user_id)
     level = user_repo.get_level(user_id)
 
     session: Optional[QuizSession] = context.user_data.get(QUIZ_SESSION_KEY)
     if not session:
-        await update.callback_query.edit_message_text("Сессия истекла. Нажми /quiz чтобы начать.")
+        await update.callback_query.edit_message_text("Session abgelaufen. /quiz starten.")
         return
 
     chosen_idx = int(answer) - 1
-    await _evaluate_answer(update, context, session, chosen_idx, settings, user_id, teacher, level, inline=True)
+    await _evaluate_answer(update, context, session, chosen_idx, settings, user_id, level, inline=True)
 
 
 async def _evaluate_answer(
@@ -222,7 +195,6 @@ async def _evaluate_answer(
     chosen_idx: int,
     settings,
     user_id: int,
-    teacher: str,
     level: str,
     inline: bool = False,
 ) -> None:
@@ -240,22 +212,22 @@ async def _evaluate_answer(
     if correct:
         session.score += 1
 
-    pool = CORRECT_TPLS[teacher] if correct else WRONG_TPLS[teacher]
+    pool = CORRECT_TPLS if correct else WRONG_TPLS
     feedback = random.choice(pool).format(
         word_de=session.correct_answer,
         example_de=session.example_de,
     )
     mastered_note = " \U0001f3c6" if new_status == "mastered" else ""
-    result_text = f"{feedback}{mastered_note}\n\nОчки: {session.score}/{session.total}"
+    result_text = f"{feedback}{mastered_note}\n\nPunkte: {session.score}/{session.total}"
 
     if inline and update.callback_query:
-        await _call(update.callback_query.edit_message_text, result_text, parse_mode="Markdown")
+        await update.callback_query.edit_message_text(result_text, parse_mode="Markdown")
     elif update.message:
-        await _call(update.message.reply_text, result_text, parse_mode="Markdown")
+        await _safe_send(update.message.reply_text, result_text, parse_mode="Markdown")
 
     context.user_data.pop(QUIZ_SESSION_KEY, None)
     await _send_next_question(
-        update, context, settings.database_path, user_id, teacher, level,
+        update, context, settings.database_path, user_id, level,
         score=session.score, total=session.total
     )
 
@@ -265,7 +237,6 @@ async def _send_next_question(
     context: ContextTypes.DEFAULT_TYPE,
     db_path: str,
     user_id: int,
-    teacher: str,
     level: str,
     score: int = 0,
     total: int = 0,
@@ -282,7 +253,7 @@ async def _send_next_question(
         return
 
     if not item:
-        await _call(send_fn, "\U0001f389 Все слова пройдены! Приходи позже.")
+        await _safe_send(send_fn, "\U0001f3c6 Alle Woerter gelernt! Komm spaeter wieder.")
         return
 
     session = QuizSession(
@@ -297,7 +268,6 @@ async def _send_next_question(
     )
     context.user_data[QUIZ_SESSION_KEY] = session
 
-    tpl = QUIZ_QUESTION_TPLS.get(teacher, QUIZ_QUESTION_TPLS["vitali"])
-    question = tpl.format(word_ru=item["word_ru"])
+    question = QUIZ_QUESTION_TPL.format(word_ru=item["word_ru"])
     keyboard = _make_inline_keyboard(item["options"])
-    await _call(send_fn, question, parse_mode="Markdown", reply_markup=keyboard)
+    await _safe_send(send_fn, question, parse_mode="Markdown", reply_markup=keyboard)

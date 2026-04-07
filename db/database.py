@@ -12,7 +12,7 @@ def init_db(db_path: str) -> None:
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_id INTEGER UNIQUE NOT NULL,
                 name        TEXT DEFAULT '',
-                teacher     TEXT DEFAULT 'vitali',
+                teacher     TEXT DEFAULT 'imperator',
                 level       TEXT DEFAULT 'a1',
                 last_seen   TIMESTAMP,
                 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -70,7 +70,7 @@ def init_db(db_path: str) -> None:
                 user_id    INTEGER NOT NULL,
                 role       TEXT NOT NULL,
                 content    TEXT NOT NULL,
-                teacher    TEXT DEFAULT '',
+                teacher    TEXT DEFAULT 'imperator',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 

@@ -29,12 +29,11 @@ def test_case_insensitive():
 
 def test_format_feedback_contains_word():
     result = evaluate_pronunciation("Danke", "Danke")
-    feedback = format_feedback(result, "vitali")
+    feedback = format_feedback(result, "imperator")
     assert "Danke" in feedback
 
 
 def test_format_feedback_all_teachers():
     result = evaluate_pronunciation("Hallo", "xyz")
-    for teacher in ("vitali", "dering", "imperator"):
-        fb = format_feedback(result, teacher)
-        assert len(fb) > 0
+    fb = format_feedback(result, "imperator")
+    assert len(fb) > 0
