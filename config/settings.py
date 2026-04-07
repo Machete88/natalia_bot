@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-# .env immer relativ zu diesem File suchen — egal von wo der Bot gestartet wird
 _ENV_PATH = Path(__file__).parent.parent / ".env"
 
 
@@ -20,7 +19,7 @@ def _load_dotenv() -> None:
             key, _, value = line.partition("=")
             key = key.strip()
             value = value.strip().strip('"').strip("'")
-            if key and key.isidentifier() or all(c.isalnum() or c == "_" for c in key):
+            if key and (key.isidentifier() or all(c.isalnum() or c == "_" for c in key)):
                 if key not in os.environ:
                     os.environ[key] = value
 
@@ -38,9 +37,8 @@ class Settings:
     whisper_model: str = "small"
     tts_provider: str = "mock"
     elevenlabs_api_key: Optional[str] = None
-    voice_id_vitali: Optional[str] = None
-    voice_id_dering: Optional[str] = None
     voice_id_imperator: Optional[str] = None
+    groq_api_key: Optional[str] = None
     database_path: str = "data/natalia_bot.db"
     log_file: str = "logs/bot.log"
     support_codeword: str = "hilfe123"
@@ -75,9 +73,8 @@ class Settings:
             whisper_model=env.get("WHISPER_MODEL", "small"),
             tts_provider=env.get("TTS_PROVIDER", "mock"),
             elevenlabs_api_key=env.get("ELEVENLABS_API_KEY"),
-            voice_id_vitali=env.get("VOICE_ID_VITALI"),
-            voice_id_dering=env.get("VOICE_ID_DERING"),
             voice_id_imperator=env.get("VOICE_ID_IMPERATOR"),
+            groq_api_key=env.get("GROQ_API_KEY"),
             database_path=env.get("DATABASE_PATH", "data/natalia_bot.db"),
             log_file=env.get("LOG_FILE", "logs/bot.log"),
             support_codeword=env.get("SUPPORT_CODEWORD", "hilfe123"),

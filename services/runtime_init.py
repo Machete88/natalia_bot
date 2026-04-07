@@ -90,12 +90,12 @@ def initialise_services(settings) -> Dict[str, Any]:
 
     router = DialogueRouter(llm_provider=llm, user_repo=user_repo, memory_repo=memory_repo)
 
-    voice_map = {
-        "vitali": settings.voice_id_vitali,
-        "dering": settings.voice_id_dering,
-        "imperator": settings.voice_id_imperator,
-    }
-    voice_pipeline = VoicePipeline(stt=stt, tts=tts, voice_map=voice_map)
+    # Nur Imperator — eine Voice ID
+    voice_id = settings.voice_id_imperator
+    if not voice_id:
+        logger.warning("VOICE_ID_IMPERATOR ist nicht gesetzt! TTS wird fehlschlagen.")
+
+    voice_pipeline = VoicePipeline(stt=stt, tts=tts, voice_id=voice_id)
 
     sticker_service = StickerService(
         catalog_path="media/stickers/catalog.json",
