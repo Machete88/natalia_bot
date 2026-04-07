@@ -1,4 +1,4 @@
-"""Handler for /start command — Imperator only."""
+"""Handler for /start command — Imperator empfängt Natasha."""
 from __future__ import annotations
 import logging
 from telegram import Update
@@ -6,59 +6,66 @@ from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
-WELCOME = (
-    "\U0001f525 *Я Император.*\n\n"
-    "Немецкий \u2014 это не просто слова. Это другой способ видеть мир. Готова?"
+# Erstes Mal
+WELCOME_NEW = (
+    "\U0001f525 *Ich bin der Imperator.*\n\n"
+    "Немецкий \u2014 это не просто слова. Это другой способ видеть мир.\n\n"
+    "Сначала мне нужно знать одно: какой у тебя уровень?\n\n"
+    "*A1* \u2014 только начинаю\n"
+    "*A2* \u2014 знаю основы\n"
+    "*B1* \u2014 уже разговариваю\n\n"
+    "_Отправь /setlevel a1 (или a2, b1) \u2014 и начнём._"
 )
 
-PLAN_TEXT = """
-\U0001f4cb *План обучения:*
+# Wiederkehrend
+WELCOME_BACK = (
+    "\U0001f525 *Ты вернулась.*\n\n"
+    "Хорошо. Пиши мне \u2014 или отправь голосовое.\n\n"
+    "Что хочешь сегодня?\n"
+    "/lesson \u2014 новые слова\n"
+    "/quiz \u2014 проверь что помнишь\n"
+    "/progress \u2014 твой прогресс\n\n"
+    "_Или просто напиши мне что-нибудь по-немецки._"
+)
 
-\U0001f4da /lesson \u2014 учим 5 новых слов
-\U0001f914 /quiz \u2014 викторина: угадай слово
-\U0001f4ca /progress \u2014 твой прогресс
-\U0001f4d0 /setlevel a1 \u2014 установить уровень
-\U0001f3a4 Голос \u2014 говори со мной по-немецки
-\U0001f4f8 Фото \u2014 проверка домашней работы
-\U0001f4ac Пиши \u2014 просто напиши мне. Отвечу.
-
-_Начнём? Напиши *Hallo* или отправь голосовое._
-"""
+GREETING_TTS_NEW  = "Я Император. Немецкий \u2014 это другой способ видеть мир. Готова?"
+GREETING_TTS_BACK = "Ты вернулась. Хорошо. Что хочешь сегодня?"
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     services = context.bot_data.get("services", {})
     user_repo = services.get("user_repo")
-    tts = services.get("tts")
-    voice_pipeline = services.get("voice_pipeline")
-    sticker_service = services.get("sticker_service")
+    tts       = services.get("tts")
+    vp        = services.get("voice_pipeline")
+    sticker   = services.get("sticker_service")
 
     user = update.effective_user
+    is_new = True
     if user_repo:
-        user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
-        user_repo.set_teacher(user_id, "imperator")
+        uid = user_repo.get_or_create_user(user.id, user.first_name or "")
+        user_repo.set_teacher(uid, "imperator")
+        # Neuer User = kein Level gesetzt yet
+        level = user_repo.get_level(uid)
+        is_new = not bool(level) or level == "beginner"
 
-    full_msg = f"{WELCOME}\n{PLAN_TEXT}"
-    await update.message.reply_text(full_msg, parse_mode="Markdown")
+    msg     = WELCOME_NEW if is_new else WELCOME_BACK
+    tts_msg = GREETING_TTS_NEW if is_new else GREETING_TTS_BACK
 
-    # Sticker
-    if sticker_service:
-        sticker_id = sticker_service.get_sticker_for_event("greeting")
-        if sticker_id:
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+    if sticker:
+        sid = sticker.get_sticker_for_event("greeting")
+        if sid:
             try:
-                await update.message.reply_sticker(sticker_id)
-            except Exception as e:
-                logger.debug("Sticker send failed: %s", e)
+                await update.message.reply_sticker(sid)
+            except Exception:
+                pass
 
-    # Begruessung als Sprachnachricht
-    greeting_tts = (
-        "Я Император. Немецкий \u2014 это другой способ видеть мир. Готова?"
-    )
-    if tts and voice_pipeline and voice_pipeline.voice_id:
+    if tts and vp and vp.voice_id:
         try:
             await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")
-            audio_file = await tts.synthesize(greeting_tts, voice_pipeline.voice_id)
-            with open(str(audio_file), "rb") as f:
+            af = await tts.synthesize(tts_msg, vp.voice_id)
+            with open(str(af), "rb") as f:
                 await update.message.reply_voice(voice=f)
         except Exception as e:
-            logger.warning("TTS for start greeting failed: %s", e)
+            logger.warning("TTS start failed: %s", e)
