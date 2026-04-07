@@ -1,16 +1,18 @@
 """Settings loaded from environment / .env file."""
 from __future__ import annotations
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+# .env immer relativ zu diesem File suchen — egal von wo der Bot gestartet wird
+_ENV_PATH = Path(__file__).parent.parent / ".env"
+
 
 def _load_dotenv() -> None:
-    env_path = Path(".env")
-    if not env_path.exists():
+    if not _ENV_PATH.exists():
         return
-    with env_path.open(encoding="utf-8") as f:
+    with _ENV_PATH.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -18,8 +20,9 @@ def _load_dotenv() -> None:
             key, _, value = line.partition("=")
             key = key.strip()
             value = value.strip().strip('"').strip("'")
-            if key not in os.environ:
-                os.environ[key] = value
+            if key and key.isidentifier() or all(c.isalnum() or c == "_" for c in key):
+                if key not in os.environ:
+                    os.environ[key] = value
 
 
 @dataclass
@@ -40,7 +43,6 @@ class Settings:
     voice_id_imperator: Optional[str] = None
     database_path: str = "data/natalia_bot.db"
     log_file: str = "logs/bot.log"
-    # Support-Modus
     support_codeword: str = "hilfe123"
     daily_reminder_time: str = "09:00"
     timezone: str = "Europe/Berlin"
