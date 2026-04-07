@@ -1,4 +1,4 @@
-"""Text-Nachrichten Handler."""
+"""Text-Nachrichten Handler — Natasha schreibt, Imperator antwortet."""
 from __future__ import annotations
 
 import logging
@@ -12,16 +12,16 @@ logger = logging.getLogger(__name__)
 
 PRACTICE_CORRECT = [
     "\u2705 *{word_de}*.",
-    "\u2705 Richtig. *{word_de}*.",
+    "\u2705 Ричтиг. *{word_de}*.",
 ]
 
 PRACTICE_WRONG = [
     "\u274c *{word_de}*. _{example}_",
-    "\u274c Falsch. *{word_de}*.",
+    "\u274c Фальшо. *{word_de}*.",
 ]
 
 PRACTICE_NEXT = "\u2757 *{word_ru}*:"
-PRACTICE_DONE = "\U0001f525 Упражнение завершено. /quiz — если готова."
+PRACTICE_DONE = "\U0001f525 Упражнение завершено. /quiz \u2014 если готова."
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -29,42 +29,64 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     settings = context.bot_data.get("settings")
     user = update.effective_user
 
-    # Support codeword check
+    # --- Support-Modus ---
+    from bot.handlers.support import is_support_active, SUPPORT_MODE_KEY
+
+    # 1. Codewort-Check (nur für Natasha)
     if settings and getattr(settings, "support_codeword", None):
-        if text.lower() == settings.support_codeword.lower():
+        if (
+            user.id == settings.authorized_user_id
+            and text.lower() == settings.support_codeword.lower()
+        ):
             from bot.handlers.support import activate_support
             await activate_support(update, context)
             return
 
+    # 2. /endsupport als Text (Fallback)
     if text.strip().lower() == "/endsupport":
-        from bot.handlers.support import is_support_active, deactivate_support
         if is_support_active(context):
+            from bot.handlers.support import deactivate_support
             await deactivate_support(update, context)
         return
 
-    from bot.handlers.support import is_support_active, forward_to_admin
-    if is_support_active(context) and settings and user.id == settings.authorized_user_id:
+    # 3. Wenn Support aktiv: Natasha's Nachrichten an Admin weiterleiten
+    if (
+        is_support_active(context)
+        and settings
+        and user.id == settings.authorized_user_id
+    ):
+        from bot.handlers.support import forward_to_admin
         await forward_to_admin(update, context)
         return
 
-    if settings and user.id == settings.admin_user_id and user.id != settings.authorized_user_id:
+    # 4. Admin antwortet — nur wenn er NICHT auch authorized_user ist
+    if (
+        settings
+        and user.id == settings.admin_user_id
+        and user.id != settings.authorized_user_id
+        and is_support_active(context)
+    ):
         from bot.handlers.support import handle_admin_reply
         await handle_admin_reply(update, context)
         return
 
+    # --- /skip ---
     if text.lower() in ("/skip", "skip"):
         await _handle_skip(update, context)
         return
 
+    # --- Practice-Phase ---
     session = get_session(context.user_data)
     if session.phase == LearningPhase.PRACTICE:
         await _handle_practice_answer(update, context, text, session)
         return
 
+    # --- Quiz ---
     if context.user_data.get(QUIZ_SESSION_KEY) and text in {"1", "2", "3", "4"}:
         await handle_quiz(update, context)
         return
 
+    # --- Normaler Chat mit Imperator ---
     services = context.bot_data.get("services", {})
     dialogue_router = services.get("dialogue_router")
     tts = services.get("tts")
@@ -88,7 +110,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     await update.message.reply_text(response_text)
 
-    # TTS — always Imperator voice, use voice_id directly from pipeline
+    # TTS
     if tts and voice_pipeline and voice_pipeline.voice_id:
         try:
             await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")

@@ -1,10 +1,10 @@
-"""Support-Modus: Natalia tippt das Codewort -> Admin wird in den Chat eingebunden.
+"""Support-Modus: Natalia tippt das Codewort -> Admin wird eingebunden.
 
 Fluss:
 1. Natalia schickt das Codewort (SUPPORT_CODEWORD in .env).
-2. Bot bestaetigt Natalia diskret und benachrichtigt den Admin per Telegram + E-Mail.
-3. Alle Nachrichten von Natalia werden als Forward an den Admin weitergeleitet.
-4. Admin antwortet -> Bot leitet es als 'Lehrer' an Natalia weiter.
+2. Bot bestaetigt diskret und benachrichtigt den Admin.
+3. Alle Nachrichten von Natalia werden an Admin weitergeleitet.
+4. Admin antwortet -> Bot leitet es als Imperator an Natalia.
 5. /endsupport (Admin ODER Natalia) beendet den Modus.
 """
 from __future__ import annotations
@@ -17,39 +17,23 @@ logger = logging.getLogger(__name__)
 SUPPORT_MODE_KEY    = "support_mode_active"
 SUPPORT_CHAT_ID_KEY = "support_chat_id"
 
-ENTRY_MSG = {
-    "vitali":    "\U0001f91d Привет! Не переживай \u2014 я здесь \U0001f60a",
-    "dering":    "\U0001f91d Добрый день. Чем могу помочь?",
-    "imperator": "\U0001f525 На связи.",
-}
-EXIT_MSG = {
-    "vitali":    "\U0001f44b До свидания! Продолжай учиться \U0001f4aa",
-    "dering":    "\U0001f44b До следующего раза.",
-    "imperator": "\U0001f525 На сегодня достаточно.",
-}
+ENTRY_MSG = "\U0001f525 На связи. Чем могу помочь?"
+EXIT_MSG   = "\U0001f525 Понял. До следующего раза."
 
 
 def is_support_active(context: ContextTypes.DEFAULT_TYPE) -> bool:
-    return context.application.bot_data.get(SUPPORT_MODE_KEY, False)
+    return bool(context.application.bot_data.get(SUPPORT_MODE_KEY, False))
 
 
 async def activate_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    services = context.bot_data.get("services", {})
     settings = context.bot_data.get("settings")
-    user_repo = services.get("user_repo")
-
     user = update.effective_user
     natalia_chat_id = update.effective_chat.id
 
     context.application.bot_data[SUPPORT_MODE_KEY]    = True
     context.application.bot_data[SUPPORT_CHAT_ID_KEY] = natalia_chat_id
 
-    teacher = "vitali"
-    if user_repo:
-        uid = user_repo.get_or_create_user(user.id, user.first_name or "")
-        teacher = user_repo.get_teacher(uid)
-
-    await update.message.reply_text(ENTRY_MSG.get(teacher, ENTRY_MSG["vitali"]))
+    await update.message.reply_text(ENTRY_MSG)
 
     if settings:
         admin_id = settings.admin_user_id
@@ -60,11 +44,10 @@ async def activate_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 f"\U0001f514 *Support-Modus aktiv*\n"
                 f"{name} braucht Hilfe.\n"
                 f"Alle Nachrichten werden hierher weitergeleitet.\n\n"
-                f"Возобнови: /endsupport"
+                f"Выключить: /endsupport"
             ),
             parse_mode="Markdown",
         )
-        # E-Mail-Alert (nicht-blockierend)
         try:
             from services.email_alert import send_support_alert
             import asyncio
@@ -73,7 +56,7 @@ async def activate_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         except Exception as e:
             logger.warning("E-Mail-Alert fehlgeschlagen: %s", e)
 
-        logger.info("Support mode activated by %s, notified admin %s", user.id, admin_id)
+        logger.info("Support mode activated by %s", user.id)
 
 
 async def forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -107,46 +90,34 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     natalia_chat_id = context.application.bot_data.get(SUPPORT_CHAT_ID_KEY)
     if not natalia_chat_id:
         return
-    services = context.bot_data.get("services", {})
-    user_repo = services.get("user_repo")
-    settings  = context.bot_data.get("settings")
-    teacher = "vitali"
-    if user_repo and settings:
-        try:
-            teacher = user_repo.get_teacher(settings.authorized_user_id)
-        except Exception:
-            pass
-    teacher_labels = {"vitali": "\U0001f1e9\U0001f1ea Vitali", "dering": "\U0001f1e9\U0001f1ea Dering", "imperator": "\U0001f525 Imperator"}
-    label = teacher_labels.get(teacher, "Lehrer")
     text = update.message.text or ""
     if text.strip().lower() == "/endsupport":
         await deactivate_support(update, context)
         return
     if text:
-        await context.bot.send_message(chat_id=natalia_chat_id, text=f"*{label}*: {text}", parse_mode="Markdown")
+        await context.bot.send_message(
+            chat_id=natalia_chat_id,
+            text=f"\U0001f525 *Imperator*: {text}",
+            parse_mode="Markdown",
+        )
 
 
 async def deactivate_support(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    services = context.bot_data.get("services", {})
     settings  = context.bot_data.get("settings")
-    user_repo = services.get("user_repo")
     natalia_chat_id = context.application.bot_data.get(SUPPORT_CHAT_ID_KEY)
     context.application.bot_data[SUPPORT_MODE_KEY]    = False
     context.application.bot_data[SUPPORT_CHAT_ID_KEY] = None
     if natalia_chat_id:
-        teacher = "vitali"
-        if user_repo and settings:
-            try:
-                teacher = user_repo.get_teacher(settings.authorized_user_id)
-            except Exception:
-                pass
         try:
-            await context.bot.send_message(chat_id=natalia_chat_id, text=EXIT_MSG.get(teacher, EXIT_MSG["vitali"]))
+            await context.bot.send_message(chat_id=natalia_chat_id, text=EXIT_MSG)
         except Exception as e:
             logger.warning("Exit msg failed: %s", e)
     if settings:
         try:
-            await context.bot.send_message(chat_id=settings.admin_user_id, text="\u2705 Support-Modus beendet. Bot laeuft wieder normal.")
+            await context.bot.send_message(
+                chat_id=settings.admin_user_id,
+                text="\u2705 Support-Modus beendet. Bot läuft wieder normal."
+            )
         except Exception as e:
             logger.warning("Admin confirm failed: %s", e)
     logger.info("Support mode deactivated.")
