@@ -86,7 +86,6 @@ async def _dispatch_voice_command(
     cmd: str, text: str, update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     if cmd == "lesson":
-        # Thema aus dem Text extrahieren für Themen-Lektion
         topic = _detect_topic(text)
         if topic:
             context.args = [topic]
@@ -144,7 +143,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     user = update.effective_user
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
-    teacher = user_repo.get_teacher(user_id)
+    teacher = user_repo.get_teacher(user_id) or "vitali"  # Fallback auf vitali
 
     await context.bot.send_chat_action(update.effective_chat.id, action="typing")
 
@@ -198,7 +197,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if tts and voice_pipeline:
         try:
             voice_map = voice_pipeline.voice_map
-            voice_id = voice_map.get(teacher.lower(), teacher)
+            # Sicherer Lookup: None-Fallback verhindern
+            voice_id = voice_map.get(teacher.lower()) if voice_map else None
+            if not voice_id:
+                logger.warning("No voice_id for teacher '%s' in voice_map %s — TTS skipped.", teacher, voice_map)
+                return
             await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")
             audio_file = await tts.synthesize(response_text, voice_id)
             with open(str(audio_file), "rb") as f:
