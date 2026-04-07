@@ -54,11 +54,14 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     full_text = "\n".join(lines)
     await update.message.reply_text(full_text, parse_mode="Markdown")
 
-    # Weiteres nur wenn settings vorhanden (kein Test-Pfad)
+    # NUR wenn settings vorhanden (kein Test-Pfad) - sonst hier aufhoeren
     settings = context.bot_data.get("settings")
+    if not settings:
+        return
+
     user_data = context.user_data
 
-    if settings and isinstance(user_data, dict):
+    if isinstance(user_data, dict):
         try:
             from services.session_manager import get_session
             session = get_session(user_data)
@@ -69,33 +72,34 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         except Exception as e:
             logger.warning("Session init failed: %s", e)
 
-        try:
-            from services.card_generator import generate_card_bytes
-            for i, step in enumerate(steps, 1):
-                card_bytes = generate_card_bytes(
-                    word_de=step.word_de, word_ru=step.word_ru,
-                    example=step.example_de, card_num=i, teacher="imperator",
+    try:
+        from services.card_generator import generate_card_bytes
+        for i, step in enumerate(steps, 1):
+            card_bytes = generate_card_bytes(
+                word_de=step.word_de, word_ru=step.word_ru,
+                example=step.example_de, card_num=i, teacher="imperator",
+            )
+            if card_bytes:
+                await update.message.reply_photo(
+                    photo=io.BytesIO(card_bytes),
+                    caption=f"{step.word_de} = {step.word_ru}",
                 )
-                if card_bytes:
-                    await update.message.reply_photo(
-                        photo=io.BytesIO(card_bytes),
-                        caption=f"{step.word_de} = {step.word_ru}",
-                    )
+    except Exception as e:
+        logger.warning("Card generation failed: %s", e)
+
+    if tts and voice_pipeline:
+        words_de = ", ".join(s.word_de for s in steps)
+        tts_text = f"Heute lernst du: {words_de}."
+        try:
+            voice_id = voice_pipeline.voice_map.get("imperator", "imperator")
+            await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")
+            audio_file = await tts.synthesize(tts_text, voice_id)
+            with open(str(audio_file), "rb") as f:
+                await update.message.reply_voice(voice=f)
         except Exception as e:
-            logger.warning("Card generation failed: %s", e)
+            logger.warning("TTS for lesson failed: %s", e)
 
-        if tts and voice_pipeline:
-            words_de = ", ".join(s.word_de for s in steps)
-            tts_text = f"Heute lernst du: {words_de}."
-            try:
-                voice_id = voice_pipeline.voice_map.get("imperator", "imperator")
-                await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")
-                audio_file = await tts.synthesize(tts_text, voice_id)
-                with open(str(audio_file), "rb") as f:
-                    await update.message.reply_voice(voice=f)
-            except Exception as e:
-                logger.warning("TTS for lesson failed: %s", e)
-
+    if isinstance(user_data, dict):
         try:
             from services.session_manager import get_session
             session = get_session(user_data)

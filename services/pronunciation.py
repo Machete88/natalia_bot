@@ -81,11 +81,13 @@ def format_feedback(result: dict, teacher: str = "imperator") -> str:
     bars = int(score / 10)
     bar = "\U0001f7e9" * bars + "\u2b1c" * (10 - bars)
 
+    # Zielwort ist explizit im Text enthalten
     base = (
         f"\U0001f3a4 *Aussprache-Ergebnis*\n\n"
         f"{bar} {score}/100\n"
         f"Bewertung: *{grade.upper()}*\n\n"
-        f"*{word}*: {feedback}"
+        f"Wort: *{word}*\n"
+        f"{feedback}"
     )
 
     if score < 60:
