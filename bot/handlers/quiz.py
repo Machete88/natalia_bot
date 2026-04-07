@@ -154,11 +154,12 @@ def _make_inline_keyboard(options: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-async def _safe_send(send_fn, *args, **kwargs) -> None:
-    """Ruft send_fn auf und awaitet das Ergebnis nur wenn es awaitable ist."""
-    result = send_fn(*args, **kwargs)
+async def _call(fn, *args, **kwargs):
+    """Ruft fn auf und awaitet das Ergebnis nur wenn es awaitable ist."""
+    result = fn(*args, **kwargs)
     if inspect.isawaitable(result):
-        await result
+        return await result
+    return result
 
 
 async def handle_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -170,7 +171,7 @@ async def handle_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not user_repo or not settings:
         msg = update.message or (update.callback_query.message if update.callback_query else None)
         if msg:
-            await _safe_send(msg.reply_text, "Сервис временно недоступен.")
+            await _call(msg.reply_text, "Сервис временно недоступен.")
         return
 
     user = update.effective_user
@@ -178,7 +179,6 @@ async def handle_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     teacher = user_repo.get_teacher(user_id)
     level = user_repo.get_level(user_id)
 
-    # Quiz-Session text-Antwort (1-4) - Legacy-Support
     session: Optional[QuizSession] = context.user_data.get(QUIZ_SESSION_KEY)
     if update.message:
         text = update.message.text.strip() if update.message.text else ""
@@ -249,11 +249,10 @@ async def _evaluate_answer(
     result_text = f"{feedback}{mastered_note}\n\nОчки: {session.score}/{session.total}"
 
     if inline and update.callback_query:
-        await update.callback_query.edit_message_text(result_text, parse_mode="Markdown")
+        await _call(update.callback_query.edit_message_text, result_text, parse_mode="Markdown")
     elif update.message:
-        await _safe_send(update.message.reply_text, result_text, parse_mode="Markdown")
+        await _call(update.message.reply_text, result_text, parse_mode="Markdown")
 
-    # Automatisch naechste Frage
     context.user_data.pop(QUIZ_SESSION_KEY, None)
     await _send_next_question(
         update, context, settings.database_path, user_id, teacher, level,
@@ -283,7 +282,7 @@ async def _send_next_question(
         return
 
     if not item:
-        await _safe_send(send_fn, "\U0001f389 Все слова пройдены! Приходи позже.")
+        await _call(send_fn, "\U0001f389 Все слова пройдены! Приходи позже.")
         return
 
     session = QuizSession(
@@ -301,4 +300,4 @@ async def _send_next_question(
     tpl = QUIZ_QUESTION_TPLS.get(teacher, QUIZ_QUESTION_TPLS["vitali"])
     question = tpl.format(word_ru=item["word_ru"])
     keyboard = _make_inline_keyboard(item["options"])
-    await _safe_send(send_fn, question, parse_mode="Markdown", reply_markup=keyboard)
+    await _call(send_fn, question, parse_mode="Markdown", reply_markup=keyboard)

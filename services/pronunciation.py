@@ -21,7 +21,7 @@ def _normalize(text: str) -> str:
 
 
 def score_pronunciation(target: str, spoken: str) -> dict:
-    """Berechnet Aussprache-Score. Gibt {'score': 0-100, 'grade': str, 'feedback': str} zurueck."""
+    """Berechnet Aussprache-Score. Gibt {'score': 0-100, 'grade': str, 'feedback': str, 'word': str} zurueck."""
     t = _normalize(target)
     s = _normalize(spoken)
 
@@ -62,7 +62,9 @@ def evaluate_pronunciation(target: str, spoken: str) -> dict:
 
 
 def format_feedback(result: dict, teacher: str) -> str:
-    """Formatiert Ergebnis-Nachricht fuer Telegram. Enthaelt immer das Zielwort."""
+    """Formatiert Ergebnis-Nachricht fuer Telegram.
+    Enthaelt immer das Zielwort (word) im Output.
+    """
     score = result["score"]
     grade = result.get("grade", "")
     feedback = result.get("feedback", "")
@@ -71,11 +73,12 @@ def format_feedback(result: dict, teacher: str) -> str:
     bars = int(score / 10)
     bar = "\U0001f7e9" * bars + "\u2b1c" * (10 - bars)
 
+    # Zielwort immer prominent einbinden
     base = (
         f"\U0001f3a4 *Aussprache-Ergebnis*\n\n"
         f"{bar} {score}/100\n"
         f"Bewertung: *{grade.upper()}*\n\n"
-        f"{word}: {feedback}"
+        f"*{word}*: {feedback}"
     )
 
     if score < 60:

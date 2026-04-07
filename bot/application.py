@@ -59,10 +59,7 @@ async def build_application(settings: Settings, services: dict) -> Application:
     app.add_handler(MessageHandler(auth_filter & filters.PHOTO,        handle_homework))
     app.add_handler(MessageHandler(auth_filter & filters.Document.ALL, handle_homework))
 
-    try:
-        _schedule_user_reminders(app, settings)
-    except Exception as e:
-        logger.warning("Could not schedule reminders: %s", e)
+    _schedule_user_reminders(app, settings)
 
     logger.info("Handlers registered. Authorized users: %s", allowed)
     return app
