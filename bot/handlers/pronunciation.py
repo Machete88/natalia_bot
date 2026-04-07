@@ -13,12 +13,7 @@ logger = logging.getLogger(__name__)
 
 PRONUNCIATION_SESSION_KEY = "pronunciation_target"
 
-
-PROMPT_MSGS = {
-    "vitali": "\U0001f3a4 Отлично! Теперь скажи по-немецки: *{word}*",
-    "dering": "\U0001f3a4 Произнесите: *{word}*",
-    "imperator": "\U0001f525 Говори: *{word}*",
-}
+PROMPT_MSG = "\U0001f525 Говори: *{word}*"
 
 NO_STT_MSG = (
     "\U0001f50a Для проверки произношения нужен локальный Whisper.\n"
@@ -40,13 +35,11 @@ async def handle_pronounce(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     user = update.effective_user
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
-    teacher = user_repo.get_teacher(user_id)
 
     args = context.args
     if args:
         word = " ".join(args)
     else:
-        # Zufaelliges Wort aus Vokabelliste
         import sqlite3, random
         if settings:
             with sqlite3.connect(settings.database_path) as conn:
@@ -60,15 +53,12 @@ async def handle_pronounce(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     context.user_data[PRONUNCIATION_SESSION_KEY] = word
 
-    tpl = PROMPT_MSGS.get(teacher, PROMPT_MSGS["vitali"])
-    prompt = tpl.format(word=word)
+    prompt = PROMPT_MSG.format(word=word)
     await update.message.reply_text(prompt, parse_mode="Markdown")
 
-    # TTS: Lehrer spricht das Wort vor
     if tts and voice_pipeline:
         try:
-            voice_map = voice_pipeline.voice_map
-            voice_id = voice_map.get(teacher.lower(), teacher)
+            voice_id = voice_pipeline.voice_map.get("imperator", "imperator")
             await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")
             audio_file = await tts.synthesize(word, voice_id)
             with open(str(audio_file), "rb") as f:
@@ -88,7 +78,6 @@ async def handle_voice_pronunciation(update: Update, context: ContextTypes.DEFAU
 
     services = context.bot_data.get("services", {})
     user_repo = services.get("user_repo")
-    voice_pipeline = services.get("voice_pipeline")
     settings = context.bot_data.get("settings")
 
     user = update.effective_user
@@ -96,7 +85,6 @@ async def handle_voice_pronunciation(update: Update, context: ContextTypes.DEFAU
         return False
 
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
-    teacher = user_repo.get_teacher(user_id)
 
     stt = services.get("stt")
     from services.stt import MockSTTProvider
@@ -105,7 +93,6 @@ async def handle_voice_pronunciation(update: Update, context: ContextTypes.DEFAU
         context.user_data.pop(PRONUNCIATION_SESSION_KEY, None)
         return True
 
-    # Sprachdatei herunterladen
     try:
         tg_file = await context.bot.get_file(update.message.voice.file_id)
         audio_dir = Path("media/audio")
@@ -117,7 +104,6 @@ async def handle_voice_pronunciation(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_text("Не удалось загрузить аудио.")
         return True
 
-    # STT
     try:
         recognised = await stt.transcribe(local_path)
     except Exception as e:
@@ -126,20 +112,13 @@ async def handle_voice_pronunciation(update: Update, context: ContextTypes.DEFAU
         return True
 
     result = evaluate_pronunciation(target_word, recognised)
-    feedback = format_feedback(result, teacher)
+    feedback = format_feedback(result, "imperator")
 
-    # Session loeschen
     context.user_data.pop(PRONUNCIATION_SESSION_KEY, None)
 
     await update.message.reply_text(feedback, parse_mode="Markdown")
 
-    # Bei gutem Ergebnis naechstes Wort anbieten
     if result["grade"] in ("perfect", "good"):
-        next_prompt = {
-            "vitali": "\U0001f4aa Браво! Следующее слово? /pronounce",
-            "dering": "Следующее: /pronounce",
-            "imperator": "\U0001f525 Дальше. /pronounce",
-        }
-        await update.message.reply_text(next_prompt.get(teacher, "/pronounce"))
+        await update.message.reply_text("\U0001f525 Дальше. /pronounce")
 
     return True
