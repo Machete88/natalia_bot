@@ -51,4 +51,25 @@ def init_db(db_path: str) -> None:
                 content    TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS streaks (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id        INTEGER NOT NULL UNIQUE,
+                current_streak INTEGER DEFAULT 0,
+                longest_streak INTEGER DEFAULT 0,
+                last_date      TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                key     TEXT NOT NULL,
+                value   TEXT,
+                UNIQUE(user_id, key)
+            );
         """)
+
+
+# Alias fuer Rueckwaertskompatibilitaet mit Tests
+def initialise_database(db_path: str) -> None:
+    init_db(db_path)

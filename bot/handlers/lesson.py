@@ -11,26 +11,26 @@ from services.session_manager import get_session, LearningPhase
 logger = logging.getLogger(__name__)
 
 TEACHER_LESSON_INTRO = {
-    "vitali": "📚 Отлично, начинаем! Сегодня *{count} слов*. \nЧитай, запоминай, потом потренируемся!\n\n",
-    "dering": "📖 Урок начат. *{count} единиц*. Внимание на примеры.\n\n",
-    "imperator": "🔥 *{count}* слов. Читай. Запоминай.\n\n",
+    "vitali": "\U0001f4da Отлично, начинаем! Сегодня *{count} слов*. \nЧитай, запоминай, потом потренируемся!\n\n",
+    "dering": "\U0001f4d6 Урок начат. *{count} единиц*. Внимание на примеры.\n\n",
+    "imperator": "\U0001f525 *{count}* слов. Читай. Запоминай.\n\n",
 }
 
 TEACHER_LESSON_EMPTY = {
-    "vitali": "🎉 Наташа, ты уже выучила все доступные слова! Скоро добавим новые.",
+    "vitali": "\U0001f389 Наташа, ты уже выучила все доступные слова! Скоро добавим новые.",
     "dering": "Словарный запас текущего уровня исчерпан. Ожидайте пополнения.",
     "imperator": "Все слова изучены. Хорошо.",
 }
 
 
 def _format_step(step, i: int, total: int) -> str:
-    icon = "🔄" if step.type == "review_vocab" else "✨"
+    icon = "\U0001f504" if step.type == "review_vocab" else "\u2728"
     tag = "(повторение)" if step.type == "review_vocab" else "(новое)"
     return (
         f"{icon} *{i}/{total}* {tag}\n"
-        f"🇩🇪 *{step.word_de}* \u2014 {step.word_ru}\n"
-        f"💬 _{step.example_de}_\n"
-        f"📝 {step.example_ru}"
+        f"\U0001f1e9\U0001f1ea *{step.word_de}* \u2014 {step.word_ru}\n"
+        f"\U0001f4ac _{step.example_de}_\n"
+        f"\U0001f4dd {step.example_ru}"
     )
 
 
@@ -65,7 +65,7 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         for s in steps
     ])
 
-    # Intro + Vokabeln
+    # Intro + Vokabeln - genau EIN reply_text
     intro = TEACHER_LESSON_INTRO.get(teacher, TEACHER_LESSON_INTRO["vitali"]).format(count=len(steps))
     lines = [intro]
     for i, step in enumerate(steps, 1):
@@ -103,23 +103,25 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         except Exception as e:
             logger.warning("TTS for lesson failed: %s", e)
 
-    # Nach Lektion: Übung starten
-    await _start_practice(update, context, teacher, session)
+    # Nach Lektion: Uebung starten (nur wenn settings vorhanden)
+    settings = context.bot_data.get("settings")
+    if settings:
+        await _start_practice(update, context, teacher, session)
 
 
 async def _start_practice(
     update: Update, context: ContextTypes.DEFAULT_TYPE, teacher: str, session
 ) -> None:
-    """Startet die Übungsphase direkt nach der Lektion."""
+    """Startet die Uebungsphase direkt nach der Lektion."""
     session.start_practice()
     word = session.current_practice_word()
     if not word:
         return
 
     intros = {
-        "vitali": f"💪 Теперь проверим! Напиши по-немецки: *{word['word_ru']}*",
-        "dering": f"📝 Переведите: *{word['word_ru']}*",
-        "imperator": f"❗ *{word['word_ru']}* \u2014 по-немецки:",
+        "vitali": f"\U0001f4aa Теперь проверим! Напиши по-немецки: *{word['word_ru']}*",
+        "dering": f"\U0001f4dd Переведите: *{word['word_ru']}*",
+        "imperator": f"\u2757 *{word['word_ru']}* \u2014 по-немецки:",
     }
     msg = intros.get(teacher, intros["vitali"])
     await update.message.reply_text(

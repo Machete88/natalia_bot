@@ -13,7 +13,7 @@ from config.settings import Settings
 logger = logging.getLogger(__name__)
 
 
-def build_application(settings: Settings, services: dict) -> Application:
+async def build_application(settings: Settings, services: dict) -> Application:
     app = Application.builder().token(settings.telegram_bot_token).build()
     app.bot_data["services"] = services
     app.bot_data["settings"] = settings

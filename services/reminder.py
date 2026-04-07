@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 import os
 import random
+import sqlite3
+from datetime import date, datetime, timedelta
 from datetime import time
 from zoneinfo import ZoneInfo
 from telegram import Update
@@ -56,6 +58,54 @@ def parse_time(time_str: str) -> time | None:
         return time(int(h), int(m))
     except Exception:
         return None
+
+
+def update_streak(db_path: str, user_id: int, today: str | None = None) -> int:
+    """Aktualisiert den Lern-Streak fuer user_id in user_preferences.
+
+    Speichert 'last_learned' (Datum) und 'streak' (Zaehler).
+    Regeln:
+      - Selber Tag wie last_learned -> kein Doppelzaehlen, Streak unveraendert
+      - Gestern als last_learned    -> Streak + 1
+      - Alles andere                -> Streak = 1 (Reset)
+    Gibt den aktuellen Streak-Wert zurueck.
+    """
+    today_str = today or date.today().strftime("%Y-%m-%d")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+
+        def _get(key: str) -> str | None:
+            row = conn.execute(
+                "SELECT value FROM user_preferences WHERE user_id=? AND key=?",
+                (user_id, key),
+            ).fetchone()
+            return row["value"] if row else None
+
+        def _set(key: str, value: str) -> None:
+            conn.execute(
+                "INSERT OR REPLACE INTO user_preferences (user_id, key, value) VALUES (?,?,?)",
+                (user_id, key, value),
+            )
+
+        last_learned = _get("last_learned")
+        streak_val = int(_get("streak") or "0")
+
+        if last_learned == today_str:
+            # Heute schon gelernt - nicht doppelt zaehlen
+            return streak_val
+
+        yesterday = (datetime.strptime(today_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        if last_learned == yesterday:
+            streak_val += 1
+        else:
+            streak_val = 1
+
+        _set("last_learned", today_str)
+        _set("streak", str(streak_val))
+        conn.commit()
+
+    return streak_val
 
 
 async def send_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -145,8 +195,8 @@ async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not args:
         await update.message.reply_text(
             "\U0001f4ac Nutzung:\n"
-            "/remind 09:00 — Erinnerung um 09:00 Uhr\n"
-            "/remind off — Erinnerung deaktivieren"
+            "/remind 09:00 \u2014 Erinnerung um 09:00 Uhr\n"
+            "/remind off \u2014 Erinnerung deaktivieren"
         )
         return
 

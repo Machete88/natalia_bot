@@ -26,7 +26,7 @@ def score_pronunciation(target: str, spoken: str) -> dict:
     s = _normalize(spoken)
 
     if not s:
-        return {"score": 0, "grade": "F", "feedback": "Nichts erkannt. Bitte nochmal versuchen."}
+        return {"score": 0, "grade": "try_again", "feedback": "Nichts erkannt. Bitte nochmal versuchen.", "word": target}
 
     ratio = difflib.SequenceMatcher(None, t, s).ratio()
     score = int(ratio * 100)
@@ -34,15 +34,13 @@ def score_pronunciation(target: str, spoken: str) -> dict:
         score = 100
 
     if score >= 90:
-        grade, feedback = "A", "Perfekt! \U0001f3af"
-    elif score >= 75:
-        grade, feedback = "B", "Sehr gut! \U0001f44d"
-    elif score >= 60:
-        grade, feedback = "C", "Gut, aber noch etwas Uebung. \U0001f4aa"
-    elif score >= 40:
-        grade, feedback = "D", "Weiter ueben! \U0001f4da"
+        grade, feedback = "perfect", "Perfekt! \U0001f3af"
+    elif score >= 70:
+        grade, feedback = "good", "Sehr gut! \U0001f44d"
+    elif score >= 50:
+        grade, feedback = "ok", "Gut, aber noch etwas Uebung. \U0001f4aa"
     else:
-        grade, feedback = "F", "Nochmal bitte! \U0001f501"
+        grade, feedback = "try_again", "Nochmal bitte! \U0001f501"
 
     if t != s and score < 90:
         diff_hints = []
@@ -52,30 +50,23 @@ def score_pronunciation(target: str, spoken: str) -> dict:
         if diff_hints:
             feedback += f"\n\U0001f4ac Korrektur: {', '.join(diff_hints[:2])}"
 
-    return {"score": score, "grade": grade, "feedback": feedback}
+    return {"score": score, "grade": grade, "feedback": feedback, "word": target}
 
 
 def evaluate_pronunciation(target: str, spoken: str) -> dict:
-    """Alias fuer score_pronunciation mit erweiterten grade-Labels."""
-    result = score_pronunciation(target, spoken)
-    score = result["score"]
-    # Grade-Labels fuer handler-Kompatibilitaet
-    if score >= 90:
-        result["grade"] = "perfect"
-    elif score >= 70:
-        result["grade"] = "good"
-    elif score >= 50:
-        result["grade"] = "ok"
-    else:
-        result["grade"] = "poor"
-    return result
+    """Bewertet Aussprache. Gibt {'score', 'grade', 'feedback', 'word'} zurueck.
+
+    grade-Werte: 'perfect' | 'good' | 'ok' | 'try_again'
+    """
+    return score_pronunciation(target, spoken)
 
 
 def format_feedback(result: dict, teacher: str) -> str:
-    """Formatiert Ergebnis-Nachricht fuer Telegram."""
+    """Formatiert Ergebnis-Nachricht fuer Telegram. Enthaelt immer das Zielwort."""
     score = result["score"]
     grade = result.get("grade", "")
     feedback = result.get("feedback", "")
+    word = result.get("word", "")
 
     bars = int(score / 10)
     bar = "\U0001f7e9" * bars + "\u2b1c" * (10 - bars)
@@ -84,7 +75,7 @@ def format_feedback(result: dict, teacher: str) -> str:
         f"\U0001f3a4 *Aussprache-Ergebnis*\n\n"
         f"{bar} {score}/100\n"
         f"Bewertung: *{grade.upper()}*\n\n"
-        f"{feedback}"
+        f"{word}: {feedback}"
     )
 
     if score < 60:

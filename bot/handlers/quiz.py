@@ -1,6 +1,7 @@
 """Handler fuer /quiz - Vokabel-Quiz mit Inline-Keyboard-Antworten."""
 from __future__ import annotations
 
+import inspect
 import logging
 import random
 import sqlite3
@@ -102,39 +103,39 @@ def _update_vocab_progress(db_path: str, user_id: int, vocab_id: int, correct: b
 
 
 QUIZ_QUESTION_TPLS = {
-    "vitali": "🤔 *Как по-немецки:* {word_ru}\n\nВыбери ответ!",
-    "dering": "📝 *Переведите:* {word_ru}",
-    "imperator": "🔥 {word_ru}",
+    "vitali": "\U0001f914 *Как по-немецки:* {word_ru}\n\nВыбери ответ!",
+    "dering": "\U0001f4dd *Переведите:* {word_ru}",
+    "imperator": "\U0001f525 {word_ru}",
 }
 
 CORRECT_TPLS = {
     "vitali": [
-        "✅ Верно! *{word_de}* 👏",
-        "✅ Отлично! *{word_de}* — молодец!",
-        "🌟 Да! *{word_de}*. Продолжай!",
+        "\u2705 Верно! *{word_de}* \U0001f44d",
+        "\u2705 Отлично! *{word_de}* — молодец!",
+        "\U0001f31f Да! *{word_de}*. Продолжай!",
     ],
     "dering": [
-        "✅ *{word_de}* — верно.",
-        "✅ Правильно. *{word_de}*",
+        "\u2705 *{word_de}* — верно.",
+        "\u2705 Правильно. *{word_de}*",
     ],
     "imperator": [
-        "✅ *{word_de}*.",
-        "✅ Верно. *{word_de}*.",
+        "\u2705 *{word_de}*.",
+        "\u2705 Верно. *{word_de}*.",
     ],
 }
 
 WRONG_TPLS = {
     "vitali": [
-        "❌ Нет, но не беда! Правильный ответ: *{word_de}*\n— запомни: _{example_de}_",
-        "❌ Почти! Правильно: *{word_de}*\n— пример: _{example_de}_",
+        "\u274c Нет, но не беда! Правильный ответ: *{word_de}*\n— запомни: _{example_de}_",
+        "\u274c Почти! Правильно: *{word_de}*\n— пример: _{example_de}_",
     ],
     "dering": [
-        "❌ Неверно. Правильный ответ: *{word_de}*.",
-        "❌ Ошибка. *{word_de}* — _{example_de}_",
+        "\u274c Неверно. Правильный ответ: *{word_de}*.",
+        "\u274c Ошибка. *{word_de}* — _{example_de}_",
     ],
     "imperator": [
-        "❌ Нет. *{word_de}*.",
-        "❌ Ошибка. *{word_de}*.",
+        "\u274c Нет. *{word_de}*.",
+        "\u274c Ошибка. *{word_de}*.",
     ],
 }
 
@@ -153,6 +154,13 @@ def _make_inline_keyboard(options: list) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
+async def _safe_send(send_fn, *args, **kwargs) -> None:
+    """Ruft send_fn auf und awaitet das Ergebnis nur wenn es awaitable ist."""
+    result = send_fn(*args, **kwargs)
+    if inspect.isawaitable(result):
+        await result
+
+
 async def handle_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Startet eine neue Quiz-Runde (Befehl /quiz)."""
     services = context.bot_data.get("services", {})
@@ -162,7 +170,7 @@ async def handle_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not user_repo or not settings:
         msg = update.message or (update.callback_query.message if update.callback_query else None)
         if msg:
-            await msg.reply_text("Сервис временно недоступен.")
+            await _safe_send(msg.reply_text, "Сервис временно недоступен.")
         return
 
     user = update.effective_user
@@ -170,7 +178,7 @@ async def handle_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     teacher = user_repo.get_teacher(user_id)
     level = user_repo.get_level(user_id)
 
-    # Quiz-Session text-Antwort (1-4) — Legacy-Support
+    # Quiz-Session text-Antwort (1-4) - Legacy-Support
     session: Optional[QuizSession] = context.user_data.get(QUIZ_SESSION_KEY)
     if update.message:
         text = update.message.text.strip() if update.message.text else ""
@@ -237,13 +245,13 @@ async def _evaluate_answer(
         word_de=session.correct_answer,
         example_de=session.example_de,
     )
-    mastered_note = " 🏆" if new_status == "mastered" else ""
+    mastered_note = " \U0001f3c6" if new_status == "mastered" else ""
     result_text = f"{feedback}{mastered_note}\n\nОчки: {session.score}/{session.total}"
 
     if inline and update.callback_query:
         await update.callback_query.edit_message_text(result_text, parse_mode="Markdown")
     elif update.message:
-        await update.message.reply_text(result_text, parse_mode="Markdown")
+        await _safe_send(update.message.reply_text, result_text, parse_mode="Markdown")
 
     # Automatisch naechste Frage
     context.user_data.pop(QUIZ_SESSION_KEY, None)
@@ -265,7 +273,6 @@ async def _send_next_question(
 ) -> None:
     item = _get_quiz_item(db_path, user_id, level)
 
-    # Ziel: Nachricht senden (aus Callback oder Message)
     send_fn = None
     if update.callback_query and update.callback_query.message:
         send_fn = update.callback_query.message.reply_text
@@ -276,7 +283,7 @@ async def _send_next_question(
         return
 
     if not item:
-        await send_fn("🎉 Все слова пройдены! Приходи позже.")
+        await _safe_send(send_fn, "\U0001f389 Все слова пройдены! Приходи позже.")
         return
 
     session = QuizSession(
@@ -294,4 +301,4 @@ async def _send_next_question(
     tpl = QUIZ_QUESTION_TPLS.get(teacher, QUIZ_QUESTION_TPLS["vitali"])
     question = tpl.format(word_ru=item["word_ru"])
     keyboard = _make_inline_keyboard(item["options"])
-    await send_fn(question, parse_mode="Markdown", reply_markup=keyboard)
+    await _safe_send(send_fn, question, parse_mode="Markdown", reply_markup=keyboard)

@@ -28,13 +28,19 @@ def _get_vocab_stats(db_path: str, user_id: int) -> dict:
         total_vocab = conn.execute("SELECT COUNT(*) as cnt FROM vocab_items").fetchone()["cnt"]
         total_seen = sum(stats.values())
 
-        # Streak
-        streak_row = conn.execute(
-            "SELECT current_streak, longest_streak FROM streaks WHERE user_id=?",
-            (user_id,),
-        ).fetchone()
-        current_streak = streak_row["current_streak"] if streak_row else 0
-        longest_streak = streak_row["longest_streak"] if streak_row else 0
+        # Streak - defensiv: Tabelle koennte fehlen
+        current_streak = 0
+        longest_streak = 0
+        try:
+            streak_row = conn.execute(
+                "SELECT current_streak, longest_streak FROM streaks WHERE user_id=?",
+                (user_id,),
+            ).fetchone()
+            if streak_row:
+                current_streak = streak_row["current_streak"]
+                longest_streak = streak_row["longest_streak"]
+        except sqlite3.OperationalError:
+            pass
 
         return {
             **stats,
