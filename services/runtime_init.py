@@ -46,9 +46,20 @@ def initialise_services(settings) -> Dict[str, Any]:
         tts = MockTTSProvider()
         logger.info("TTS: MockTTSProvider")
 
-    # STT
+    # STT - Groq (bevorzugt), dann Whisper lokal, dann Mock
     stt_provider_name = (settings.stt_provider or "mock").lower()
-    if stt_provider_name == "whisper_local":
+    groq_key = getattr(settings, "groq_api_key", None)
+
+    if groq_key and stt_provider_name in ("groq", "whisper_local", "auto"):
+        try:
+            from services.stt.groq_provider import GroqSTTProvider
+            stt = GroqSTTProvider(api_key=groq_key)
+            logger.info("STT: GroqSTTProvider (whisper-large-v3-turbo)")
+        except Exception as e:
+            from services.stt import MockSTTProvider
+            stt = MockSTTProvider()
+            logger.warning("STT fallback to mock: %s", e)
+    elif stt_provider_name == "whisper_local":
         try:
             from services.stt.whisper_provider import WhisperProvider
             stt = WhisperProvider(model=settings.whisper_model)
@@ -91,7 +102,6 @@ def initialise_services(settings) -> Dict[str, Any]:
         sticker_dir="media/stickers",
     )
 
-    # Taeglich-Erinnerungs-Job registrieren (wird von app.main gestartet)
     reminder_time = getattr(settings, "daily_reminder_time", "09:00")
     timezone = getattr(settings, "timezone", "Europe/Berlin")
 
