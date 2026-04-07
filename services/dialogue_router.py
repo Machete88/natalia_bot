@@ -1,10 +1,15 @@
-"""Dialogue router: builds prompts, calls LLM, returns teacher response."""
+"""Dialogue router: builds prompts, calls LLM, returns Imperator response."""
 from __future__ import annotations
-import logging, random
+
+import logging
+import random
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Persona
+# ---------------------------------------------------------------------------
 IMPERATOR_PERSONA = (
     "Du bist Imperator, ein rätselhafter, präziser Deutschlehrer. Jedes Wort hat Gewicht. "
     "Deine Aufgabe: Natasha Deutsch beibringen. Du WIEDERHOLST NIEMALS einfach was sie sagt. "
@@ -12,7 +17,10 @@ IMPERATOR_PERSONA = (
     "Antworte IMMER auf Russisch, deutsche Wörter/Sätze in *Fettdruck*."
 )
 
-LEVEL_INSTRUCTIONS = {
+# ---------------------------------------------------------------------------
+# Level instructions
+# ---------------------------------------------------------------------------
+LEVEL_INSTRUCTIONS: Dict[str, str] = {
     "beginner": (
         "Natasha ist Anfängerin. Verwende nur einfachste Wörter (Hallo, Danke, Ja, Nein, Zahlen 1-10). "
         "Erkläre alles sehr einfach. Gib immer russische Übersetzung dazu."
@@ -39,6 +47,9 @@ LEVEL_INSTRUCTIONS = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# Teaching rules
+# ---------------------------------------------------------------------------
 TEACHING_RULES = """
 WICHTIGE REGELN FÜR DEN UNTERRICHT:
 1. WIEDERHOLE NIEMALS einfach was Natasha gesagt hat
@@ -56,6 +67,9 @@ FALLBACK_MESSAGES = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Router
+# ---------------------------------------------------------------------------
 class DialogueRouter:
     def __init__(self, llm_provider, user_repo, memory_repo) -> None:
         self._llm = llm_provider

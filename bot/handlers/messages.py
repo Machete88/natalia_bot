@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.handlers.quiz import QUIZ_SESSION_KEY, handle_quiz
-from services.session_manager import get_session, LearningPhase, clear_session
+from services.session_manager import get_session, LearningPhase
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,6 @@ PRACTICE_WRONG = [
 ]
 
 PRACTICE_NEXT = "\u2757 *{word_ru}*:"
-
 PRACTICE_DONE = "\U0001f525 Упражнение завершено. /quiz — если готова."
 
 
@@ -30,7 +29,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     settings = context.bot_data.get("settings")
     user = update.effective_user
 
-    if settings and hasattr(settings, "support_codeword") and settings.support_codeword:
+    # Support codeword check
+    if settings and getattr(settings, "support_codeword", None):
         if text.lower() == settings.support_codeword.lower():
             from bot.handlers.support import activate_support
             await activate_support(update, context)
@@ -88,11 +88,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     await update.message.reply_text(response_text)
 
-    if tts and voice_pipeline:
+    # TTS — always Imperator voice, use voice_id directly from pipeline
+    if tts and voice_pipeline and voice_pipeline.voice_id:
         try:
-            voice_id = voice_pipeline.voice_map.get("imperator", "imperator")
             await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")
-            audio_file = await tts.synthesize(response_text, voice_id)
+            audio_file = await tts.synthesize(response_text, voice_pipeline.voice_id)
             with open(str(audio_file), "rb") as f:
                 await update.message.reply_voice(voice=f)
         except Exception as e:
@@ -138,7 +138,7 @@ async def _handle_practice_answer(
             msg = PRACTICE_NEXT.format(word_ru=next_word["word_ru"])
             await update.message.reply_text(
                 msg + "\n\n_(/skip чтобы пропустить)_",
-                parse_mode="Markdown"
+                parse_mode="Markdown",
             )
 
 
@@ -161,4 +161,7 @@ async def _handle_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         next_word = session.current_practice_word()
         if next_word:
             msg = PRACTICE_NEXT.format(word_ru=next_word["word_ru"])
-            await update.message.reply_text(msg + "\n\n_(/skip чтобы пропустить)_", parse_mode="Markdown")
+            await update.message.reply_text(
+                msg + "\n\n_(/skip чтобы пропустить)_",
+                parse_mode="Markdown",
+            )

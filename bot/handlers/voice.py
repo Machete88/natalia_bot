@@ -1,4 +1,4 @@
-"""Voice message handler mit Aussprache-Check, Sprachbefehl- und Themen-Erkennung."""
+"""Voice message handler: STT → Sprachbefehl-Erkennung → DialogueRouter → TTS."""
 from __future__ import annotations
 
 import logging
@@ -17,16 +17,14 @@ _VOICE_COMMANDS: list[tuple[list[str], str]] = [
     (["урок", "лексику", "лексика", "словa", "слова", "учить", "lektion", "lesson", "вокабуляр"], "lesson"),
     (["квиз", "тест", "проверь", "проверка", "quiz", "тестируй"], "quiz"),
     (["прогресс", "статистика", "статистику", "мой прогресс", "progress"], "progress"),
-    (["учитель", "смени учителя", "другой учитель", "teacher", "витали", "деринг", "император",
-      "vitali", "dering", "imperator"], "teacher"),
+    (["учитель", "смени учителя", "другой учитель", "teacher", "император", "imperator"], "teacher"),
     (["уровень", "мой уровень", "setlevel", "level", "a1", "a2", "b1", "b2", "c1"], "setlevel"),
     (["напомни", "напоминание", "remind", "erinnerung"], "remind"),
 ]
 
-# Themen-Mapping (Russisch + Deutsch -> topic-slug)
 _TOPIC_MAP: list[tuple[list[str], str]] = [
     (["еда", "еду", "пить", "питье", "ресторан", "кухня", "essen", "food", "trinken"], "food"),
-    (["цвета", "цветы", "оттенки", "цвета и оттенки", "farben", "farbe", "colors"], "colors"),
+    (["цвета", "цветы", "оттенки", "farben", "farbe", "colors"], "colors"),
     (["числа", "цифры", "считать", "zahlen", "numbers", "zahl"], "numbers"),
     (["время", "день", "неделя", "месяц", "zeit", "datum", "uhrzeit", "woche"], "time"),
     (["семья", "родственники", "родители", "familie", "family"], "family"),
@@ -51,26 +49,11 @@ def _detect_voice_command(text: str) -> str | None:
 
 
 def _detect_topic(text: str) -> str | None:
-    """Erkennt ob Natasha ein Thema nennt (z.B. 'еда', 'Essen')."""
     lower = text.lower()
     for keywords, topic in _TOPIC_MAP:
         for kw in keywords:
             if kw in lower:
                 return topic
-    return None
-
-
-def _extract_teacher_arg(text: str) -> str | None:
-    lower = text.lower()
-    for name in ["vitali", "витали"]:
-        if name in lower:
-            return "vitali"
-    for name in ["dering", "деринг"]:
-        if name in lower:
-            return "dering"
-    for name in ["imperator", "император"]:
-        if name in lower:
-            return "imperator"
     return None
 
 
@@ -87,10 +70,7 @@ async def _dispatch_voice_command(
 ) -> None:
     if cmd == "lesson":
         topic = _detect_topic(text)
-        if topic:
-            context.args = [topic]
-        else:
-            context.args = []
+        context.args = [topic] if topic else []
         from bot.handlers.lesson import handle_lesson
         await handle_lesson(update, context)
 
@@ -103,8 +83,8 @@ async def _dispatch_voice_command(
         await handle_progress(update, context)
 
     elif cmd == "teacher":
-        arg = _extract_teacher_arg(text)
-        context.args = [arg] if arg else []
+        # Always imperator — just confirm
+        context.args = ["imperator"]
         from bot.handlers.teacher import handle_teacher
         await handle_teacher(update, context)
 
@@ -116,7 +96,7 @@ async def _dispatch_voice_command(
 
     elif cmd == "remind":
         await update.message.reply_text(
-            "⏰ Nutze /remind 09:00 um eine tägliche Erinnerung zu setzen, "
+            "\u23f0 Nutze /remind 09:00 um eine tägliche Erinnerung zu setzen, "
             "oder /remind off zum Deaktivieren."
         )
 
@@ -124,7 +104,6 @@ async def _dispatch_voice_command(
 # ---------------------------------------------------------------------------
 # Haupt-Handler
 # ---------------------------------------------------------------------------
-
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     from bot.handlers.pronunciation import handle_voice_pronunciation
     handled = await handle_voice_pronunciation(update, context)
@@ -136,6 +115,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     voice_pipeline = services.get("voice_pipeline")
     dialogue_router = services.get("dialogue_router")
     tts = services.get("tts")
+    stt = services.get("stt")
 
     if not user_repo or not voice_pipeline:
         await update.message.reply_text("Сервис временно недоступен.")
@@ -143,7 +123,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     user = update.effective_user
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
-    teacher = user_repo.get_teacher(user_id) or "vitali"  # Fallback auf vitali
 
     await context.bot.send_chat_action(update.effective_chat.id, action="typing")
 
@@ -160,23 +139,22 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     # STT
-    stt = services.get("stt")
     try:
         text = await stt.transcribe(local_path)
     except Exception as e:
         logger.warning("STT failed: %s", e)
-        text = "[voice message]"
+        text = ""
 
-    if not text or text.strip() == "[voice message]":
+    if not text or not text.strip():
         await update.message.reply_text("Не удалось распознать речь. Попробуй ещё раз.")
         return
 
     await update.message.reply_text(f"📝 Распознано: _{text}_", parse_mode="Markdown")
 
-    # Sprachbefehl erkennen (hat Priorität)
+    # Sprachbefehl erkennen (Priorität)
     cmd = _detect_voice_command(text)
     if cmd:
-        logger.info("Voice command: %s (text: %s)", cmd, text)
+        logger.info("Voice command detected: %s (text: %s)", cmd, text)
         await _dispatch_voice_command(cmd, text, update, context)
         return
 
@@ -194,16 +172,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     await update.message.reply_text(response_text)
 
-    if tts and voice_pipeline:
+    # TTS — always Imperator voice_id from pipeline
+    if tts and voice_pipeline and voice_pipeline.voice_id:
         try:
-            voice_map = voice_pipeline.voice_map
-            # Sicherer Lookup: None-Fallback verhindern
-            voice_id = voice_map.get(teacher.lower()) if voice_map else None
-            if not voice_id:
-                logger.warning("No voice_id for teacher '%s' in voice_map %s — TTS skipped.", teacher, voice_map)
-                return
             await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")
-            audio_file = await tts.synthesize(response_text, voice_id)
+            audio_file = await tts.synthesize(response_text, voice_pipeline.voice_id)
             with open(str(audio_file), "rb") as f:
                 await update.message.reply_voice(voice=f)
         except Exception as e:
