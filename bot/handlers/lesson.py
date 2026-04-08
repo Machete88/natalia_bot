@@ -1,4 +1,4 @@
-"""Handler fuer /lesson — Vokabeln zeigen mit Topic-Auswahl per Inline-Buttons."""
+"""Handler fuer /lesson — Herr Imperator erteilt den Befehl."""
 from __future__ import annotations
 
 import io
@@ -9,20 +9,22 @@ from telegram.ext import ContextTypes
 logger = logging.getLogger(__name__)
 
 LESSON_EMPTY = (
-    "\U0001f525 Все слова на этом уровне выучены.\n\n"
-    "_Попробуй /quiz — проверь память._"
+    "\U0001f525 *Все слова этого уровня освоены.*\n\n"
+    "_Господин Император доволен. Проверь себя: /quiz_"
 )
 
 LESSON_INTRO = (
-    "\U0001f525 *Сегодня {count} слов.* Читай, слушай, запоминай.\n\n"
-    "_Когда будешь готова — /quiz._"
+    "\U0001f525 *Сегодня {count} слов по приказу Господина Императора.* "
+    "Читай. Слушай. Запоминай.\n\n"
+    "_Когда будешь готова — /quiz. Провалишься — пожалеешь._"
 )
 
 PRACTICE_PROMPT = (
-    "\n\n\U0001f4ac _Хочешь сразу потренироваться?_ Напиши *да* или иди дальше."
+    "\n\n\U0001f4ac _Хочешь потренироваться прямо сейчас?_ "
+    "Напиши *да* — или Господин Император решит за тебя."
 )
 
-TOPIC_SELECT_MSG = "\U0001f4da Выбери тему урока:"
+TOPIC_SELECT_MSG = "\U0001f4da Выбери тему — Господин Император ждёт:"
 TOPIC_ALL_LABEL  = "\U0001f504 Повторение (все темы)"
 
 
@@ -38,7 +40,6 @@ def _format_word(step, i: int, total: int) -> str:
 
 
 def _topic_keyboard(topics: list[str]) -> InlineKeyboardMarkup:
-    """Erstellt Inline-Keyboard mit verfuegbaren Topics + 'Alle' Option."""
     buttons = []
     row: list[InlineKeyboardButton] = []
     for t in topics:
@@ -60,17 +61,15 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     vp             = services.get("voice_pipeline")
 
     if not lesson_planner or not user_repo:
-        await update.message.reply_text("Сервис временно недоступен.")
+        await update.message.reply_text("Господин Император временно недоступен.")
         return
 
     user    = update.effective_user
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
 
-    # Topic aus Argument ODER Inline-Callback
     args  = context.args
     topic = args[0].lower() if args else None
 
-    # Kein Topic angegeben → Topics als Buttons anzeigen
     if not topic:
         try:
             topics = lesson_planner.available_topics(user_id)
@@ -85,7 +84,6 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 parse_mode="Markdown"
             )
             return
-        # Nur ein Topic oder keine → direkt laden
         topic = topics[0] if len(topics) == 1 else None
 
     await _deliver_lesson(update, context, user_id, topic, lesson_planner, tts, vp)
@@ -94,7 +92,6 @@ async def handle_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def handle_lesson_topic_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE, topic: str
 ) -> None:
-    """Wird von callbacks.py aufgerufen wenn Nutzer ein Topic-Button drueckt."""
     services       = context.bot_data.get("services", {})
     user_repo      = services.get("user_repo")
     lesson_planner = services.get("lesson_planner")
@@ -102,7 +99,7 @@ async def handle_lesson_topic_callback(
     vp             = services.get("voice_pipeline")
 
     if not lesson_planner or not user_repo:
-        await update.callback_query.answer("Сервис недоступен.")
+        await update.callback_query.answer("Господин Император недоступен.")
         return
 
     user    = update.effective_user
@@ -143,7 +140,6 @@ async def _deliver_lesson(
         parse_mode="Markdown"
     )
 
-    # Session speichern
     try:
         from services.session_manager import get_session
         session = get_session(context.user_data)
@@ -155,7 +151,6 @@ async def _deliver_lesson(
     except Exception as e:
         logger.warning("Session init failed: %s", e)
 
-    # Vocab-Karten als Bilder
     try:
         from services.card_generator import generate_card_bytes
         for i, step in enumerate(steps, 1):
@@ -171,12 +166,10 @@ async def _deliver_lesson(
     except Exception as e:
         logger.debug("Card generation: %s", e)
 
-    # TTS: alle Woerter vorlesen
     if tts and vp and vp.voice_id:
         words_de = ", ".join(s.word_de for s in steps)
-        tts_text = f"Сегодня мы учим: {words_de}."
+        tts_text = f"Господин Император приказывает выучить: {words_de}."
         try:
-            import asyncio
             await context.bot.send_chat_action(
                 update.effective_chat.id, action="record_voice"
             )

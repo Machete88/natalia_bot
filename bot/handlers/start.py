@@ -1,4 +1,4 @@
-"""Handler for /start command."""
+"""Handler for /start — Herr Imperator."""
 from __future__ import annotations
 import logging
 from telegram import Update
@@ -6,100 +6,93 @@ from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Erstes Mal — kein Level gesetzt
-# ---------------------------------------------------------------------------
 WELCOME_NEW = """
-\U0001f525 *Ich bin der Imperator.*
+\U0001f525 *Господин Император приветствует тебя.*
 
-Du lernst Deutsch. Ich bringe es dir bei.
-Kein Lehrplan aus dem Lehrbuch — du lernst was du brauchst.
+Ты попала ко мне учиться немецкому. Не ждала меня? 
+Тем лучше — сюрпризы держат в тонусе.
 
-*Schritt 1 — dein Level:*
-Sag mir wo du stehst, damit ich weiß womit wir anfangen:
+*Первый приказ — назови свой уровень:*
 
-/setlevel a1 — ich kenne kaum Wörter
-/setlevel a2 — ich kenne Grundlagen
-/setlevel b1 — ich kann mich verständigen
+/setlevel a1 — почти ничего не знаю
+/setlevel a2 — знаю основы
+/setlevel b1 — могу объясниться
 
-Danach geht es sofort los.
+После этого начнётся твоя настоящая тренировка.
+_Господин Император ждёт. Долго ждать я не люблю._
 """
 
-WELCOME_NEW_TTS = "Ich bin der Imperator. Du lernst Deutsch. Sag mir dein Level, dann fangen wir an."
+WELCOME_NEW_TTS = "Господин Император приветствует тебя. Назови свой уровень — и мы начнём."
 
-# ---------------------------------------------------------------------------
-# Wiederkehrend — Level bekannt, Aufgaben werden geladen
-# ---------------------------------------------------------------------------
+
 async def _build_returning_message(uid: int, services: dict, first_name: str) -> tuple[str, str]:
-    """Gibt (text, tts_text) zurueck — mit echtem Tagesplan aus DB."""
     lesson_planner = services.get("lesson_planner")
-    user_repo = services.get("user_repo")
+    user_repo      = services.get("user_repo")
 
-    level = user_repo.get_level(uid) if user_repo else "a1"
+    level         = user_repo.get_level(uid) if user_repo else "a1"
     level_display = (level or "a1").upper()
 
     due_count = 0
-    topics = []
+    topics    = []
     if lesson_planner:
         try:
             due_count = lesson_planner.due_count(uid)
-            topics = lesson_planner.available_topics(uid)
+            topics    = lesson_planner.available_topics(uid)
         except Exception as e:
             logger.warning("lesson_planner error in start: %s", e)
 
-    # Tagesplan aufbauen
     plan_lines = []
     if due_count > 0:
-        plan_lines.append(f"\U0001f501 *{due_count} Wörter* zur Wiederholung f\u00e4llig")
-    plan_lines.append("\U0001f4d6 /lesson — neue Wörter lernen")
-    plan_lines.append("\U0001f3af /quiz — Gedächtnis testen")
+        plan_lines.append(f"\u26a0\ufe0f *{due_count} слов* ждут повторения — это непростительно откладывать")
+    plan_lines.append("\U0001f4d6 /lesson — новые слова по приказу Господина Императора")
+    plan_lines.append("\U0001f3af /quiz — проверка памяти, Рекрут")
     if topics:
         topic_str = ", ".join(topics[:3])
-        plan_lines.append(f"\U0001f4cc Themen verfügbar: _{topic_str}_")
-    plan_lines.append("\U0001f4ca /progress — dein Fortschritt")
+        plan_lines.append(f"\U0001f4cc Темы: _{topic_str}_")
+    plan_lines.append("\U0001f4ca /progress — твой отчёт перед Господином Императором")
 
     plan_text = "\n".join(plan_lines)
 
-    repeat_note = ""
+    urgent = ""
     if due_count > 0:
-        repeat_note = f"\n\n\u26a0\ufe0f *{due_count} Wörter warten auf Wiederholung.* Fang damit an: /lesson"
+        urgent = f"\n\n\U0001f525 *{due_count} слов ждут.* Начни с /lesson — прямо сейчас."
 
     text = (
         f"\U0001f525 *{first_name}.*\n\n"
-        f"Level: *{level_display}* — weiter so.\n\n"
-        f"*Heute:*\n{plan_text}"
-        f"{repeat_note}\n\n"
-        "_Oder schreib mir einfach etwas auf Deutsch._"
+        f"Уровень: *{level_display}*. Господин Император помнит тебя.\n\n"
+        f"*Сегодняшний приказ:*\n{plan_text}"
+        f"{urgent}\n\n"
+        "_Или напиши что-нибудь по-немецки — посмотрим, чему ты уже научилась._"
     )
 
     if due_count > 0:
-        tts = f"Du bist zurück. {due_count} Wörter warten auf Wiederholung. Fang jetzt an."
+        tts = f"Господин Император ждал тебя. {due_count} слов на повторение. Немедленно приступай."
     else:
-        tts = "Du bist zurück. Was lernst du heute?"
+        tts = "Господин Император рад тебя видеть. Чему учимся сегодня?"
 
     return text, tts
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    services = context.bot_data.get("services", {})
+    services  = context.bot_data.get("services", {})
     user_repo = services.get("user_repo")
-    tts = services.get("tts")
-    vp = services.get("voice_pipeline")
-    sticker = services.get("sticker_service")
+    tts       = services.get("tts")
+    vp        = services.get("voice_pipeline")
+    sticker   = services.get("sticker_service")
 
-    user = update.effective_user
-    first_name = user.first_name or "Natasha"
+    user       = update.effective_user
+    first_name = user.first_name or "Рекрут"
 
     is_new = True
-    uid = None
+    uid    = None
     if user_repo:
-        uid = user_repo.get_or_create_user(user.id, first_name)
+        uid     = user_repo.get_or_create_user(user.id, first_name)
         user_repo.set_teacher(uid, "imperator")
-        level = user_repo.get_level(uid)
-        is_new = not bool(level) or level == "beginner"
+        level   = user_repo.get_level(uid)
+        is_new  = not bool(level) or level == "beginner"
 
     if is_new or uid is None:
-        msg = WELCOME_NEW
+        msg     = WELCOME_NEW
         tts_msg = WELCOME_NEW_TTS
     else:
         msg, tts_msg = await _build_returning_message(uid, services, first_name)
