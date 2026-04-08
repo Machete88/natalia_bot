@@ -1,5 +1,9 @@
-"""Kompatibilitaets-Re-Export fuer /pronounce Handler."""
-from bot.handlers.pronounce_handler import cmd_pronounce as handle_pronounce
-from bot.handlers.pronounce_handler import handle_voice_pronounce as handle_voice_pronunciation
+"""Stub fuer /pronounce — delegiert an pronounce_handler."""
+from __future__ import annotations
+from telegram import Update
+from telegram.ext import ContextTypes
+from bot.handlers.pronounce_handler import handle_pronounce as _real
 
-__all__ = ["handle_pronounce", "handle_voice_pronunciation"]
+
+async def handle_pronounce(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _real(update, context)
