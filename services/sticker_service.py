@@ -1,38 +1,61 @@
-"""Sticker service with catalog-based selection."""
+"""
+Sticker Service — sendet passende Sticker basierend auf Event-Typ.
+
+Events:
+  greeting, correct, wrong, close, fire, praise, thinking,
+  lesson, quiz, progress, streak, reminder, nika, family, done
+"""
 from __future__ import annotations
-import json, random, logging
+
+import json
+import logging
+import random
 from pathlib import Path
-from typing import Optional
+
+from telegram import Bot
 
 logger = logging.getLogger(__name__)
 
+_CATALOG_PATH = Path(__file__).parent.parent / "data" / "sticker_catalog.json"
+_catalog: dict[str, list[str]] | None = None
 
-class StickerService:
-    def __init__(self, catalog_path: str, sticker_dir: str) -> None:
-        self._catalog: dict = {}
-        self._dir = Path(sticker_dir)
+
+def _load_catalog() -> dict[str, list[str]]:
+    global _catalog
+    if _catalog is None:
         try:
-            self._catalog = json.loads(Path(catalog_path).read_text(encoding="utf-8"))
+            _catalog = json.loads(_CATALOG_PATH.read_text(encoding="utf-8"))
         except Exception as e:
-            logger.warning("Sticker catalog not loaded: %s", e)
+            logger.warning("Sticker-Catalog nicht geladen: %s", e)
+            _catalog = {}
+    return _catalog
 
-    def get_sticker_for_event(self, event: str) -> Optional[str]:
-        stickers = self._catalog.get(event, [])
-        return random.choice(stickers) if stickers else None
 
-    def maybe_send_sticker(self, event: str, probability: float = 0.5) -> Optional[str]:
-        if random.random() < probability:
-            return self.get_sticker_for_event(event)
-        return None
+async def send_sticker(bot: Bot, chat_id: int, event: str) -> bool:
+    """
+    Sendet einen zufaelligen Sticker fuer das gegebene Event.
+    Gibt True zurueck wenn erfolgreich, sonst False.
+    """
+    catalog = _load_catalog()
+    file_ids = catalog.get(event, [])
+    if not file_ids:
+        logger.debug("Kein Sticker fuer Event '%s'", event)
+        return False
+    file_id = random.choice(file_ids)
+    try:
+        await bot.send_sticker(chat_id=chat_id, sticker=file_id)
+        logger.debug("Sticker gesendet: event=%s", event)
+        return True
+    except Exception as e:
+        logger.warning("Sticker senden fehlgeschlagen (%s): %s", event, e)
+        return False
 
-    def choose_contextual_sticker(self, text: str) -> Optional[str]:
-        text_lower = text.lower()
-        if any(w in text_lower for w in ["привет", "здравствуй", "добрый"]):
-            return self.get_sticker_for_event("greeting")
-        if any(w in text_lower for w in ["молодец", "отлично", "браво", "хорошо"]):
-            return self.get_sticker_for_event("praise")
-        if any(w in text_lower for w in ["ника", "собак", "щенок"]):
-            return self.get_sticker_for_event("nika")
-        if any(w in text_lower for w in ["настя", "анастасия", "дочь"]):
-            return self.get_sticker_for_event("family")
-        return None
+
+# Convenience-Aliases
+async def sticker_correct(bot: Bot, chat_id: int)  -> bool: return await send_sticker(bot, chat_id, "correct")
+async def sticker_wrong(bot: Bot, chat_id: int)    -> bool: return await send_sticker(bot, chat_id, "wrong")
+async def sticker_praise(bot: Bot, chat_id: int)   -> bool: return await send_sticker(bot, chat_id, "praise")
+async def sticker_greeting(bot: Bot, chat_id: int) -> bool: return await send_sticker(bot, chat_id, "greeting")
+async def sticker_done(bot: Bot, chat_id: int)     -> bool: return await send_sticker(bot, chat_id, "done")
+async def sticker_streak(bot: Bot, chat_id: int)   -> bool: return await send_sticker(bot, chat_id, "streak")
+async def sticker_fire(bot: Bot, chat_id: int)     -> bool: return await send_sticker(bot, chat_id, "fire")
