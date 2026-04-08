@@ -7,6 +7,12 @@ import random
 import sys
 from pathlib import Path
 
+# --- sys.path guard: funktioniert sowohl mit 'python app/main.py'
+#     als auch mit 'python -m app.main' (dort ist __file__ immer gesetzt)
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 
 def _setup_logging(log_file: str = "logs/bot.log") -> None:
     Path(log_file).parent.mkdir(parents=True, exist_ok=True)
@@ -56,12 +62,14 @@ def main() -> None:
                 if not user_repo:
                     return
                 tg_id = settings.authorized_user_id
-                uid = user_repo.get_or_create_user(int(tg_id), "")
+                user_repo.get_or_create_user(int(tg_id), "")
                 msgs = REMINDER_MESSAGES.get("imperator", [])
                 if not msgs:
                     return
                 try:
-                    await context.bot.send_message(chat_id=int(tg_id), text=random.choice(msgs))
+                    await context.bot.send_message(
+                        chat_id=int(tg_id), text=random.choice(msgs)
+                    )
                 except Exception as e:
                     logger.warning("Reminder send failed: %s", e)
 
@@ -70,7 +78,11 @@ def main() -> None:
                 time=dtime(hour=hour, minute=minute, tzinfo=tz),
                 name="daily_reminder",
             )
-            logger.info("Daily reminder scheduled at %s (%s)", settings.daily_reminder_time, settings.timezone)
+            logger.info(
+                "Daily reminder scheduled at %s (%s)",
+                settings.daily_reminder_time,
+                settings.timezone,
+            )
         except Exception as e:
             logger.warning("Could not schedule daily reminder: %s", e)
 
