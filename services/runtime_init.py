@@ -61,20 +61,21 @@ def init_services(settings) -> dict:
         model    = settings.llm_model,
     )
 
-    # STT
+    # STT — Whisper lokal, Groq als Fallback
     stt = None
     if settings.stt_provider == "whisper_local":
         try:
-            from services.stt.whisper_local import WhisperLocalSTT
-            stt = WhisperLocalSTT(model_size=settings.whisper_model)
+            from services.stt.whisper_provider import WhisperSTTProvider
+            stt = WhisperSTTProvider(model_size=settings.whisper_model)
             logger.info("STT: Whisper local (%s)", settings.whisper_model)
         except Exception as e:
             logger.warning("Whisper STT nicht verfuegbar: %s", e)
+
     if stt is None:
         try:
-            from services.stt.groq_stt import GroqSTT
-            stt = GroqSTT(api_key=settings.groq_api_key)
-            logger.info("STT: Groq Fallback")
+            from services.stt.groq_provider import GroqSTTProvider
+            stt = GroqSTTProvider(api_key=settings.groq_api_key)
+            logger.info("STT: Groq Fallback aktiv")
         except Exception as e:
             logger.warning("Groq STT nicht verfuegbar: %s", e)
 
@@ -91,7 +92,7 @@ def init_services(settings) -> dict:
     )
     logger.info("VoicePipeline: voice_id=%r", vp.voice_id)
 
-    # Lesson-Planner — nimmt nur db_path
+    # Lesson-Planner
     from services.lesson_planner import LessonPlanner
     lesson_planner = LessonPlanner(db_path=settings.database_path)
 
@@ -103,7 +104,7 @@ def init_services(settings) -> dict:
         memory_repo  = memory_repo,
     )
 
-    # Streak (fix: korrekte Datei streak_service.py)
+    # Streak
     streak = None
     try:
         from services.streak_service import StreakService
@@ -112,11 +113,11 @@ def init_services(settings) -> dict:
     except Exception as e:
         logger.debug("StreakService nicht verfuegbar: %s", e)
 
-    # Sticker-Service (optional — braucht catalog + dir)
+    # Sticker-Service (optional)
     sticker = None
     try:
         from services.sticker_service import StickerService
-        catalog = str(Path(settings.database_path).parent.parent / "data" / "sticker_catalog.json")
+        catalog     = str(Path(settings.database_path).parent.parent / "data" / "sticker_catalog.json")
         sticker_dir = str(Path(settings.database_path).parent.parent / "media" / "stickers")
         sticker = StickerService(catalog_path=catalog, sticker_dir=sticker_dir)
         logger.info("StickerService bereit.")
