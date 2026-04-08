@@ -46,13 +46,21 @@ def init_services(settings) -> dict:
 
     _run_auto_migrations(settings.database_path)
 
-    from db.user_repo   import UserRepository
-    from db.memory_repo import MemoryRepository
-    from db.vocab_repo  import VocabRepository
+    # Repositories — liegen unter db/repositories/
+    from db.repositories.user_repository   import UserRepository
+    from db.repositories.memory_repository import MemoryRepository
 
     user_repo   = UserRepository(settings.database_path)
     memory_repo = MemoryRepository(settings.database_path)
-    vocab_repo  = VocabRepository(settings.database_path)
+
+    # VocabRepository: optional — falls vorhanden nutzen, sonst None
+    vocab_repo = None
+    try:
+        from db.repositories.vocab_repository import VocabRepository
+        vocab_repo = VocabRepository(settings.database_path)
+        logger.info("VocabRepository geladen.")
+    except ImportError:
+        logger.info("Kein VocabRepository gefunden — LessonPlanner nutzt direkten DB-Zugriff.")
 
     # LLM
     from services.llm.openai_provider import OpenAIProvider
@@ -96,7 +104,7 @@ def init_services(settings) -> dict:
     from services.lesson_planner import LessonPlanner
     lesson_planner = LessonPlanner(
         db_path    = settings.database_path,
-        vocab_repo = vocab_repo,
+        vocab_repo = vocab_repo,  # kann None sein
     )
 
     # Dialogue-Router
@@ -108,8 +116,12 @@ def init_services(settings) -> dict:
     )
 
     # Streak
-    from services.streak import StreakService
-    streak = StreakService(settings.database_path)
+    streak = None
+    try:
+        from services.streak import StreakService
+        streak = StreakService(settings.database_path)
+    except ImportError:
+        logger.debug("StreakService nicht gefunden — ueberspringe.")
 
     services = {
         "llm":             llm,
