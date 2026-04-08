@@ -1,4 +1,4 @@
-"""Handler fuer /progress — leitet an progress_handler weiter (Kompatibilitaets-Alias)."""
-from bot.handlers.progress_handler import handle_progress
+"""Kompatibilitaets-Re-Export fuer /progress Handler."""
+from bot.handlers.progress_handler import cmd_progress as handle_progress
 
 __all__ = ["handle_progress"]
