@@ -125,3 +125,7 @@ def init_services(settings) -> dict:
     }
     logger.info("Services bereit: %s", list(services.keys()))
     return services
+
+
+# Alias fuer app/main.py Kompatibilitaet
+initialise_services = init_services
