@@ -1,9 +1,11 @@
-"""Dialogue router — Imperator führt ein echtes Gespräch."""
+"""Dialogue router — Imperator fuehrt ein echtes Gespraech."""
 from __future__ import annotations
 
 import logging
 import random
 from typing import Dict, Any
+
+from services.error_correction import analyze_errors
 
 logger = logging.getLogger(__name__)
 
@@ -11,47 +13,51 @@ logger = logging.getLogger(__name__)
 # Persona
 # ---------------------------------------------------------------------------
 IMPERATOR_PERSONA = """
-Du bist *Imperator* — ein rätselhafter, präziser Deutschlehrer.
-Deine Persönlichkeit:
-- Ruhig, direkt, kein übertriebenes Loben
-- Du verwendest kurze, klare Sätze
+Du bist *Imperator* — ein raetselhafter, praeziser Deutschlehrer.
+Deine Persoenlichkeit:
+- Ruhig, direkt, kein uebertriebenes Loben
+- Du verwendest kurze, klare Saetze
 - Du BIST der Lehrer — kein Chatbot, keine KI
-- Du kennst Natasha gut, du weißt was sie braucht
+- Du kennst Natasha gut, du weisst was sie braucht
 - Dein Ziel: Natasha soll Deutsch SPRECHEN lernen, nicht nur Vokabeln pauken
 
 Sprache:
 - Antworte IMMER auf Russisch
-- Deutsche Wörter/Sätze IMMER in *Fettdruck*
-- Russische Erklärungen normal
-- Max 120 Wörter pro Antwort
-- Am Ende IMMER eine kurze Aufgabe oder Frage (nicht immer Vokabeln — auch Fragen über den Tag, Meinungen, etc.)
+- Deutsche Woerter/Saetze IMMER in *Fettdruck*
+- Russische Erklaerungen normal
+- Max 120 Woerter pro Antwort
+- Am Ende IMMER eine kurze Aufgabe oder Frage (nicht immer Vokabeln — auch Fragen ueber den Tag, Meinungen, etc.)
 """
 
 LEVEL_INSTRUCTIONS: Dict[str, str] = {
-    "beginner": "Natasha ist Anfängerin. Nur einfachste Wörter. Immer russische Übersetzung. Viel Geduld.",
-    "a1": "A1: einfache Verben, Grundvokabular, kurze Sätze. Korrekturen sanft mit Erklärung.",
-    "a2": "A2: Präsens + Perfekt, Fragen, Alltagsthemen. Fehler korrigieren mit kurzer Regel.",
-    "b1": "B1: Konjunktiv, Nebensätze, Präteritum. Fehler mit Grammatikregel erklären.",
-    "b2": "B2: Komplexe Grammatik, Redewendungen, Stil. Anspruchsvolle Übungen.",
+    "beginner": "Natasha ist Anfaengerin. Nur einfachste Woerter. Immer russische Uebersetzung. Viel Geduld.",
+    "a1": "A1: einfache Verben, Grundvokabular, kurze Saetze. Korrekturen sanft mit Erklaerung.",
+    "a2": "A2: Praesens + Perfekt, Fragen, Alltagsthemen. Fehler korrigieren mit kurzer Regel.",
+    "b1": "B1: Konjunktiv, Nebensaetze, Praeteritum. Fehler mit Grammatikregel erklaeren.",
+    "b2": "B2: Komplexe Grammatik, Redewendungen, Stil. Anspruchsvolle Uebungen.",
     "c1": "C1: Akademisch, idiomatisch, Nuancen. Diskutiere auf hohem Niveau.",
 }
 
 TEACHING_RULES = """
 Regeln (STRIKT):
 1. Wiederhole NIEMALS nur was Natasha sagte — immer eine echte Reaktion
-2. Deutsch gesprochen/geschrieben: korrigiere + erkläre Regel kurz
+2. Deutsch gesprochen/geschrieben: korrigiere + erklaere Regel kurz
 3. Gemischt Russisch+Deutsch: lobe den Versuch, korrigiere deutschen Teil
-4. Nur Russisch: antworte Russisch, füge 1-2 deutsche Wörter/Sätze ein
+4. Nur Russisch: antworte Russisch, fuege 1-2 deutsche Woerter/Saetze ein
 5. Stelle IMMER am Ende eine Frage oder kleine Aufgabe
-6. Variiere die Aufgaben: manchmal Satz bilden, manchmal Üiber den Tag fragen,
-   manchmal ein Wort erklären lassen, manchmal auf Deutsch antworten lassen
-7. Fühle dich nicht wie eine Maschine — reagiere natürlich auf den Kontext
+6. Variiere die Aufgaben: manchmal Satz bilden, manchmal ueber den Tag fragen,
+   manchmal ein Wort erklaeren lassen, manchmal auf Deutsch antworten lassen
+7. Fuehl dich nicht wie eine Maschine — reagiere natuerlich auf den Kontext
 """
 
 FALLBACK = [
     "Извини. Напиши ещё раз.",
     "Не понял. Повтори?",
 ]
+
+# Maximale Token-Schaetzung pro Nachricht (Wort ~1.3 Token)
+_MAX_HISTORY_TOKENS = 600
+_AVG_TOKENS_PER_WORD = 1.4
 
 
 def _detect_language(text: str) -> str:
@@ -62,6 +68,20 @@ def _detect_language(text: str) -> str:
     if latin > cyrillic:
         return "de"
     return "ru"
+
+
+def _trim_history(history: list, max_tokens: int = _MAX_HISTORY_TOKENS) -> list:
+    """Kuerzt History von hinten damit Token-Budget nicht ueberschritten wird."""
+    budget  = max_tokens
+    trimmed = []
+    for msg in reversed(history):
+        words  = len(msg["content"].split())
+        tokens = int(words * _AVG_TOKENS_PER_WORD)
+        if budget - tokens < 0:
+            break
+        trimmed.insert(0, msg)
+        budget -= tokens
+    return trimmed
 
 
 class DialogueRouter:
@@ -78,10 +98,12 @@ class DialogueRouter:
         extra_context: str = "",
     ) -> Dict[str, Any]:
         level    = self._users.get_level(user_id) or "a1"
-        history  = self._memory.get_history(user_id, limit=12, teacher="imperator")
+        history  = self._memory.get_history(user_id, limit=20, teacher="imperator")
         lvl_hint = LEVEL_INSTRUCTIONS.get(level, LEVEL_INSTRUCTIONS["a1"])
 
-        # Gesprächsverlauf
+        # Token-basiertes History-Limit
+        history = _trim_history(history)
+
         hist_lines = []
         for m in history:
             who = "Наташа" if m["role"] == "user" else "Император"
@@ -96,6 +118,13 @@ class DialogueRouter:
             lang_ctx = "[Наташа миксует русский+немецкий. Отлично! Похвали, исправь немецкий часть.]"
         else:
             lang_ctx = "[Наташа пишет по-русски. Ответь по-русски, добавь 1-2 немецких слова.]"
+
+        # Fehleranalyse (nur bei deutschem oder gemischtem Text)
+        error_ctx = ""
+        if lang in ("de", "mixed"):
+            result = analyze_errors(user_text)
+            if result.has_errors:
+                error_ctx = result.to_prompt_context()
 
         mode_ctx = ""
         if mode == "voice_practice":
@@ -112,6 +141,7 @@ class DialogueRouter:
             f"{TEACHING_RULES}\n"
             f"---\n"
             f"{lang_ctx}\n"
+            f"{error_ctx}\n"
             f"{mode_ctx}\n"
             f"---\n"
             f"История разговора:\n{hist_text}\n"
