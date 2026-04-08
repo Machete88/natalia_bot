@@ -40,14 +40,7 @@ def parse_time(time_str: str) -> time | None:
 
 
 def update_streak(db_path: str, user_id: int, today: str | None = None) -> int:
-    """Aktualisiert den Lern-Streak fuer user_id in user_preferences.
-
-    Regeln:
-      - Selber Tag wie last_learned -> kein Doppelzaehlen
-      - Gestern als last_learned    -> Streak + 1
-      - Alles andere                -> Streak = 1 (Reset)
-    Gibt den aktuellen Streak-Wert zurueck.
-    """
+    """Aktualisiert den Lern-Streak fuer user_id in user_preferences."""
     today_str = today or date.today().strftime("%Y-%m-%d")
 
     with sqlite3.connect(db_path) as conn:
@@ -127,44 +120,75 @@ def schedule_reminder(app: Application, chat_id: int, reminder_time: time, teach
         name=job_name,
         data={"chat_id": chat_id},
     )
-    logger.info("Reminder scheduled for %s at %s", chat_id, reminder_time)
-
-
-def remove_reminder(app: Application, chat_id: int) -> bool:
-    job_name = f"reminder_{chat_id}"
-    jobs = app.job_queue.get_jobs_by_name(job_name)
-    for job in jobs:
-        job.schedule_removal()
-    return len(jobs) > 0
+    logger.info("Reminder scheduled for chat_id=%s at %s", chat_id, reminder_time)
 
 
 async def cmd_remind(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handler fuer /remind HH:MM oder /remind off."""
-    args = context.args
+    """Handler fuer /remind [HH:MM | off]."""
+    settings = context.bot_data.get("settings")
+    app = context.application
     chat_id = update.effective_chat.id
 
+    args = context.args or []
     if not args:
         await update.message.reply_text(
-            "\U0001f4ac Nutzung:\n"
-            "/remind 09:00 \u2014 Erinnerung um 09:00 Uhr\n"
-            "/remind off \u2014 Erinnerung deaktivieren"
+            "\u23f0 *Erinnerung einrichten:*\n"
+            "/remind 09:00 \u2014 taeglich um 09:00 Uhr\n"
+            "/remind off \u2014 deaktivieren",
+            parse_mode="Markdown",
         )
         return
 
     arg = args[0].lower()
 
     if arg == "off":
-        removed = remove_reminder(context.application, chat_id)
-        if removed:
-            await update.message.reply_text("\U0001f525 Deaktiviert. Aber vergiss nicht selbst zu lernen!")
-        else:
-            await update.message.reply_text("Keine aktive Erinnerung gefunden.")
+        job_name = f"reminder_{chat_id}"
+        jobs = app.job_queue.get_jobs_by_name(job_name)
+        for job in jobs:
+            job.schedule_removal()
+        # DB aktualisieren
+        if settings:
+            try:
+                import sqlite3 as _sq
+                with _sq.connect(settings.database_path) as conn:
+                    conn.execute(
+                        "UPDATE reminders SET active=0 WHERE telegram_id=?",
+                        (chat_id,),
+                    )
+                    conn.commit()
+            except Exception as e:
+                logger.warning("Reminder DB update failed: %s", e)
+        await update.message.reply_text("\u2705 Erinnerung deaktiviert.")
         return
 
     t = parse_time(arg)
     if not t:
-        await update.message.reply_text("\u274c Format: /remind 09:30 (HH:MM)")
+        await update.message.reply_text(
+            "\u274c Ungueltige Zeit. Beispiel: /remind 09:00"
+        )
         return
 
-    schedule_reminder(context.application, chat_id, t)
-    await update.message.reply_text(f"\U0001f525 {arg} Uhr. Ich erwarte dich. Sei bereit.")
+    schedule_reminder(app, chat_id, t)
+
+    # In DB speichern
+    if settings:
+        try:
+            import sqlite3 as _sq
+            with _sq.connect(settings.database_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO reminders (telegram_id, remind_time, active)
+                    VALUES (?, ?, 1)
+                    ON CONFLICT(telegram_id) DO UPDATE SET remind_time=excluded.remind_time, active=1
+                    """,
+                    (chat_id, arg),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.warning("Reminder DB save failed: %s", e)
+
+    await update.message.reply_text(
+        f"\u23f0 Erinnerung gesetzt fuer *{arg}* Uhr.\n"
+        "/remind off zum Deaktivieren.",
+        parse_mode="Markdown",
+    )
