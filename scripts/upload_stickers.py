@@ -27,7 +27,6 @@ def _load_env():
 
 _load_env()
 
-# Sticker-Definition: filename -> event-key
 STICKER_MAP = {
     "s_start.png":    "greeting",
     "s_correct.png":  "correct",
@@ -47,108 +46,114 @@ STICKER_MAP = {
 }
 
 
+async def api(token: str, method: str, **kwargs) -> dict:
+    """Ruft die Telegram Bot API direkt per httpx auf."""
+    import httpx
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(url, **kwargs)
+    data = resp.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"{method} fehlgeschlagen: {data.get('description')}")
+    return data["result"]
+
+
 async def main():
     token   = os.getenv("TELEGRAM_BOT_TOKEN", "")
     user_id = int(os.getenv("AUTHORIZED_USER_ID", "0"))
 
     if not token or not user_id:
         print("Fehler: TELEGRAM_BOT_TOKEN und AUTHORIZED_USER_ID nicht gefunden.")
-        print(f"  .env Pfad: {ROOT / '.env'}")
         sys.exit(1)
 
-    from telegram import Bot, InputSticker
-    from telegram.constants import StickerFormat
+    bot_info  = await api(token, "getMe")
+    pack_name = f"natalia_lernen_by_{bot_info['username']}"
 
-    bot      = Bot(token=token)
-    bot_info = await bot.get_me()
-    pack_name = f"natalia_lernen_by_{bot_info.username}"
-
-    print(f"Bot: @{bot_info.username}")
-    print(f"Pack-Name: {pack_name}")
+    print(f"Bot:          @{bot_info['username']}")
+    print(f"Pack-Name:    {pack_name}")
     print(f"Sticker-Ordner: {STICKER_DIR}")
     print()
 
-    # Verfuegbare Sticker-Dateien sammeln
-    available: list[tuple[str, str]] = []  # (filename, event)
-    missing:   list[str] = []
+    # Dateien pruefen
+    available: list[tuple[Path, str]] = []
     for filename, event in STICKER_MAP.items():
         path = STICKER_DIR / filename
         if path.exists():
-            available.append((filename, event))
+            available.append((path, event))
         else:
-            missing.append(filename)
-
-    if missing:
-        print(f"Fehlende Dateien ({len(missing)}) — werden uebersprungen:")
-        for m in missing:
-            print(f"  ⚠️  {m}")
-        print()
+            print(f"  Nicht gefunden: {filename}")
 
     if not available:
-        print("Keine Sticker-Dateien gefunden!")
-        print(f"Bitte PNG-Dateien nach {STICKER_DIR} kopieren.")
+        print(f"\nKeine Sticker unter {STICKER_DIR} — bitte PNGs zuerst generieren.")
         sys.exit(1)
 
-    print(f"Lade {len(available)} Sticker hoch...")
+    print(f"Lade {len(available)} Sticker hoch...\n")
 
-    # InputSticker-Objekte vorbereiten
-    sticker_inputs: list[tuple[InputSticker, str]] = []
-    for filename, event in available:
-        path = STICKER_DIR / filename
-        data = path.read_bytes()
-        sticker_inputs.append((
-            InputSticker(sticker=data, emoji_list=["\U0001f4da"], format=StickerFormat.STATIC),
-            event
-        ))
-
-    # Pack erstellen (erster Sticker)
+    # --- Pack erstellen (erster Sticker) ---
+    first_path, first_event = available[0]
     try:
-        await bot.create_new_sticker_set(
-            user_id   = user_id,
-            name      = pack_name,
-            title     = "Natalia Lernen",
-            stickers  = [sticker_inputs[0][0]],
-            sticker_format = StickerFormat.STATIC,
-        )
-        print("  Pack erstellt!")
-    except Exception as e:
+        with open(first_path, "rb") as f:
+            await api(token, "createNewStickerSet",
+                data={
+                    "user_id":        user_id,
+                    "name":           pack_name,
+                    "title":          "Natalia Lernen",
+                    "sticker_type":   "regular",
+                    "stickers":       json.dumps([{
+                        "sticker":     "attach://sticker0",
+                        "emoji_list":  ["\U0001f4da"],
+                        "format":      "static",
+                    }]),
+                },
+                files={"sticker0": (first_path.name, f, "image/png")},
+            )
+        print(f"  Pack erstellt! (erster Sticker: {first_event})")
+    except RuntimeError as e:
         if "already" in str(e).lower():
-            print("  Pack existiert bereits — fuege Sticker hinzu.")
+            print("  Pack existiert bereits.")
         else:
-            print(f"  Pack-Erstellung fehlgeschlagen: {e}")
+            print(f"  {e}")
             sys.exit(1)
 
-    # Restliche Sticker hinzufuegen
-    for sticker_obj, event in sticker_inputs[1:]:
+    # --- Weitere Sticker hinzufuegen ---
+    for i, (path, event) in enumerate(available[1:], start=1):
         try:
-            await bot.add_sticker_to_set(
-                user_id = user_id,
-                name    = pack_name,
-                sticker = sticker_obj,
-            )
+            with open(path, "rb") as f:
+                await api(token, "addStickerToSet",
+                    data={
+                        "user_id": user_id,
+                        "name":    pack_name,
+                        "sticker": json.dumps({
+                            "sticker":    f"attach://sticker{i}",
+                            "emoji_list": ["\U0001f4da"],
+                            "format":     "static",
+                        }),
+                    },
+                    files={f"sticker{i}": (path.name, f, "image/png")},
+                )
             print(f"  + {event}")
-        except Exception as e:
+        except RuntimeError as e:
             print(f"  Fehler bei {event}: {e}")
 
-    # file_ids aus dem Pack lesen
-    pack = await bot.get_sticker_set(pack_name)
-    print(f"\nPack hat {len(pack.stickers)} Sticker.")
+    # --- file_ids lesen ---
+    pack = await api(token, "getStickerSet", params={"name": pack_name})
+    stickers = pack["stickers"]
+    print(f"\nPack hat {len(stickers)} Sticker.\n")
 
-    # Catalog aufbauen: event -> [file_id, ...]
     catalog: dict[str, list[str]] = {k: [] for k in STICKER_MAP.values()}
-    event_list = [ev for _, ev in sticker_inputs]
-    for i, sticker in enumerate(pack.stickers):
-        if i < len(event_list):
-            catalog[event_list[i]].append(sticker.file_id)
-            print(f"  {event_list[i]:12s} -> {sticker.file_id[:40]}...")
+    event_order = [ev for _, ev in available]
+    for i, sticker in enumerate(stickers):
+        if i < len(event_order):
+            fid = sticker["file_id"]
+            catalog[event_order[i]].append(fid)
+            print(f"  {event_order[i]:12s} -> {fid[:45]}...")
 
-    # Catalog speichern
     CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(CATALOG_PATH, "w", encoding="utf-8") as f:
         json.dump(catalog, f, ensure_ascii=False, indent=2)
 
     print(f"\n\u2705 Catalog gespeichert: {CATALOG_PATH}")
-    print(f"\U0001f4e6 Pack URL: https://t.me/addstickers/{pack_name}")
+    print(f"\U0001f4e6 Pack:  https://t.me/addstickers/{pack_name}")
 
 
 if __name__ == "__main__":
