@@ -1,4 +1,4 @@
-"""Handler fuer /pronounce — leitet an pronounce_handler weiter (Kompatibilitaets-Alias)."""
-from bot.handlers.pronounce_handler import handle_pronounce
+"""Kompatibilitaets-Re-Export fuer /pronounce Handler."""
+from bot.handlers.pronounce_handler import cmd_pronounce as handle_pronounce
 
 __all__ = ["handle_pronounce"]

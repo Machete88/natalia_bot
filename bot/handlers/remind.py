@@ -1,4 +1,4 @@
-"""Handler fuer /remind — leitet an remind_handler weiter (Kompatibilitaets-Alias)."""
-from bot.handlers.remind_handler import handle_remind
+"""Kompatibilitaets-Re-Export fuer /remind Handler."""
+from services.reminder import cmd_remind as handle_remind
 
 __all__ = ["handle_remind"]
