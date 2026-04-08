@@ -11,18 +11,18 @@ from services.session_manager import get_session, LearningPhase
 logger = logging.getLogger(__name__)
 
 PRACTICE_CORRECT = [
-    "\u2705 *{word_de}*. Правильно.",
-    "\u2705 *{word_de}*. Точно.",
+    "\u2705 *{word_de}*. \u041f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e.",
+    "\u2705 *{word_de}*. \u0422\u043e\u0447\u043d\u043e.",
 ]
 PRACTICE_WRONG = [
-    "\u274c Нет. *{word_de}*. Запомни.\n_{example}_",
-    "\u274c Фальшо. *{word_de}*.",
+    "\u274c \u041d\u0435\u0442. *{word_de}*. \u0417\u0430\u043f\u043e\u043c\u043d\u0438.\n_{example}_",
+    "\u274c \u0424\u0430\u043b\u044c\u0448\u043e. *{word_de}*.",
 ]
-PRACTICE_CLOSE  = "\U0001f7e1 Почти! Правильно: *{word_de}*. Попробуй ещё раз."
-PRACTICE_NEXT   = "\u2757 *{word_ru}* — по-немецки:"
+PRACTICE_CLOSE  = "\U0001f7e1 \u041f\u043e\u0447\u0442\u0438! \u041f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e: *{word_de}*. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439 \u0435\u0449\u0451 \u0440\u0430\u0437."
+PRACTICE_NEXT   = "\u2757 *{word_ru}* \u2014 \u043f\u043e-\u043d\u0435\u043c\u0435\u0446\u043a\u0438:"
 PRACTICE_DONE   = (
-    "\U0001f525 Упражнение завершено.\n\n"
-    "Молодец. Теперь /quiz — проверь память. Или просто пиши мне."
+    "\U0001f525 \u0423\u043f\u0440\u0430\u0436\u043d\u0435\u043d\u0438\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u043e.\n\n"
+    "\u041c\u043e\u043b\u043e\u0434\u0435\u0446. \u0422\u0435\u043f\u0435\u0440\u044c /quiz \u2014 \u043f\u0440\u043e\u0432\u0435\u0440\u044c \u043f\u0430\u043c\u044f\u0442\u044c. \u0418\u043b\u0438 \u043f\u0440\u043e\u0441\u0442\u043e \u043f\u0438\u0448\u0438 \u043c\u043d\u0435."
 )
 
 _PRACTICE_YES = {"\u0434\u0430", "yes", "ja", "ok", "\u0434\u0430\u0432\u0430\u0439", "\u0445\u043e\u0447\u0443", "\u043f\u043e\u0435\u0445\u0430\u043b\u0438", "go", "start"}
@@ -109,13 +109,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     # Natasha sagt "ja" nach Lesson
-    if session.phase == LearningPhase.LESSON and text.lower() in _PRACTICE_YES:
+    if session.phase == LearningPhase.LESSON_ACTIVE and text.lower() in _PRACTICE_YES:
         session.start_practice()
         word = session.current_practice_word()
         if word:
             await update.message.reply_text(
-                f"\U0001f525 Начинаем!\n\n\u2757 *{word['word_ru']}* — по-немецки:"
-                "\n\n_(/skip — пропустить)_",
+                f"\U0001f525 \u041d\u0430\u0447\u0438\u043d\u0430\u0435\u043c!\n\n\u2757 *{word['word_ru']}* \u2014 \u043f\u043e-\u043d\u0435\u043c\u0435\u0446\u043a\u0438:"
+                "\n\n_(/skip \u2014 \u043f\u0440\u043e\u043f\u0443\u0441\u0442\u0438\u0442\u044c)_",
                 parse_mode="Markdown"
             )
         return
@@ -133,7 +133,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_repo       = services.get("user_repo")
 
     if not dialogue_router or not user_repo:
-        await update.message.reply_text("Сервис временно недоступен.")
+        await update.message.reply_text("\u0421\u0435\u0440\u0432\u0438\u0441 \u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d.")
         return
 
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
@@ -144,7 +144,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         reply  = result["text"] if isinstance(result, dict) else str(result)
     except Exception as e:
         logger.error("DialogueRouter error: %s", e, exc_info=True)
-        reply = "Произошла ошибка. Попробуй ещё раз."
+        reply = "\u041f\u0440\u043e\u0438\u0437\u043e\u0448\u043b\u0430 \u043e\u0448\u0438\u0431\u043a\u0430. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439 \u0435\u0449\u0451 \u0440\u0430\u0437."
 
     await update.message.reply_text(reply)
 
@@ -182,7 +182,7 @@ async def _handle_practice_answer(
         correct = True
     elif close:
         feedback = PRACTICE_CLOSE.format(word_de=word["word_de"])
-        correct = False  # Typo zaehlt nicht als Erfolg fuer SM-2
+        correct = False
     else:
         feedback = random.choice(PRACTICE_WRONG).format(
             word_de=word["word_de"], example=word.get("example_de", "")
@@ -191,7 +191,7 @@ async def _handle_practice_answer(
 
     await update.message.reply_text(feedback, parse_mode="Markdown")
 
-    # Bei Typo: Wort NICHT weiterspringen — Natasha soll es nochmal versuchen
+    # Bei Typo: Wort NICHT weiterspringen
     if close and not exact:
         return
 
@@ -214,7 +214,7 @@ async def _handle_practice_answer(
 async def _handle_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session = get_session(context.user_data)
     if session.phase != LearningPhase.PRACTICE:
-        await update.message.reply_text("Сейчас нет активного упражнения.")
+        await update.message.reply_text("\u0421\u0435\u0439\u0447\u0430\u0441 \u043d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0433\u043e \u0443\u043f\u0440\u0430\u0436\u043d\u0435\u043d\u0438\u044f.")
         return
     done = session.advance_practice(False)
     if done:
