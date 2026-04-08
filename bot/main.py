@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config.settings import Settings
+from db.database import init_db
 from services.runtime_init import init_services
 from bot.application import build_application
 
@@ -37,10 +38,14 @@ async def main() -> None:
     logger = logging.getLogger(__name__)
     logger.info("=== Natalia Bot startet ===")
 
-    # Datenbank-Verzeichnis anlegen
+    # Datenbank-Verzeichnis + Schema anlegen
     Path(settings.database_path).parent.mkdir(parents=True, exist_ok=True)
+    init_db(settings.database_path)
+    logger.info("Datenbank bereit: %s", settings.database_path)
 
     services = init_services(settings)
+    logger.info("Services bereit.")
+
     app = await build_application(settings, services)
 
     logger.info("Bot laeuft. Druecke Ctrl+C zum Beenden.")
