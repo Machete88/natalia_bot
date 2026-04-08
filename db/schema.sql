@@ -44,12 +44,18 @@ CREATE TABLE IF NOT EXISTS vocab_items (
     example_ru TEXT
 );
 
--- User-specific vocabulary progress (spaced repetition)
+-- User-specific vocabulary progress (SM-2 Spaced Repetition)
 CREATE TABLE IF NOT EXISTS vocab_progress (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
     vocab_id INTEGER NOT NULL REFERENCES vocab_items(id),
-    status TEXT NOT NULL DEFAULT 'new', -- new/learning/mastered
+    status TEXT NOT NULL DEFAULT 'new',       -- new / learning / mastered
+    -- SM-2 Felder
+    ease_factor REAL NOT NULL DEFAULT 2.5,    -- Ease-Faktor (>= 1.3)
+    interval_days INTEGER NOT NULL DEFAULT 0, -- Aktuelles Intervall in Tagen
+    repetitions INTEGER NOT NULL DEFAULT 0,   -- Erfolgreiche Wdh. in Folge
+    next_review_date TEXT,                    -- ISO-Datum naechste Wiederholung
+    -- Altfeld behalten fuer Kompatibilitaet
     correct_streak INTEGER NOT NULL DEFAULT 0,
     last_seen TEXT DEFAULT (datetime('now')),
     UNIQUE(user_id, vocab_id)
