@@ -18,19 +18,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = query.data or ""
     logger.debug("Callback: %s", data)
 
-    # Quiz-Antworten: quiz_1 … quiz_4
+    # Quiz-Antworten
     if data.startswith("quiz_"):
         answer = data.split("_", 1)[1]
         await handle_quiz_inline(update, context, answer)
         return
 
-    # Lesson Topic-Auswahl: lesson_topic_<topic|all>
+    # Lesson Topic
     if data.startswith("lesson_topic_"):
         topic = data[len("lesson_topic_"):]
         from bot.handlers.lesson import handle_lesson_topic_callback
         await handle_lesson_topic_callback(update, context, topic)
         return
 
-    # Unbekannter Callback
+    # Rollenspiele
+    if data.startswith("rp_"):
+        scenario_key = data[len("rp_"):]
+        from bot.handlers.roleplay import handle_rp_callback
+        await handle_rp_callback(update, context, scenario_key)
+        return
+
     await query.answer()
     logger.warning("Unbekannter Callback: %s", data)

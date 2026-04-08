@@ -1,7 +1,8 @@
-"""Text-Nachrichten Handler — natuerlicher Chat mit Imperator."""
+"""Text-Nachrichten Handler — natuerlicher Chat mit Imperator + Rollenspiel-Routing."""
 from __future__ import annotations
 
 import logging
+import random
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -11,28 +12,26 @@ from services.session_manager import get_session, LearningPhase
 logger = logging.getLogger(__name__)
 
 PRACTICE_CORRECT = [
-    "\u2705 *{word_de}*. \u041f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e.",
-    "\u2705 *{word_de}*. \u0422\u043e\u0447\u043d\u043e.",
+    "✅ *{word_de}*. Правильно.",
+    "✅ *{word_de}*. Точно.",
 ]
 PRACTICE_WRONG = [
-    "\u274c \u041d\u0435\u0442. *{word_de}*. \u0417\u0430\u043f\u043e\u043c\u043d\u0438.\n_{example}_",
-    "\u274c \u0424\u0430\u043b\u044c\u0448\u043e. *{word_de}*.",
+    "❌ Нет. *{word_de}*. Запомни.\n_{example}_",
+    "❌ Фальшиво. *{word_de}*.",
 ]
-PRACTICE_CLOSE  = "\U0001f7e1 \u041f\u043e\u0447\u0442\u0438! \u041f\u0440\u0430\u0432\u0438\u043b\u044c\u043d\u043e: *{word_de}*. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439 \u0435\u0449\u0451 \u0440\u0430\u0437."
-PRACTICE_NEXT   = "\u2757 *{word_ru}* \u2014 \u043f\u043e-\u043d\u0435\u043c\u0435\u0446\u043a\u0438:"
+PRACTICE_CLOSE  = "🟡 Почти! Правильно: *{word_de}*. Попробуй ещё раз."
+PRACTICE_NEXT   = "❗ *{word_ru}* — по-немецки:"
 PRACTICE_DONE   = (
-    "\U0001f525 \u0423\u043f\u0440\u0430\u0436\u043d\u0435\u043d\u0438\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u043e.\n\n"
-    "\u041c\u043e\u043b\u043e\u0434\u0435\u0446. \u0422\u0435\u043f\u0435\u0440\u044c /quiz \u2014 \u043f\u0440\u043e\u0432\u0435\u0440\u044c \u043f\u0430\u043c\u044f\u0442\u044c. \u0418\u043b\u0438 \u043f\u0440\u043e\u0441\u0442\u043e \u043f\u0438\u0448\u0438 \u043c\u043d\u0435."
+    "🔥 Упражнение завершено.\n\n"
+    "Молодец. Теперь /quiz — проверь память. Или просто пиши мне."
 )
 
-_PRACTICE_YES = {"\u0434\u0430", "yes", "ja", "ok", "\u0434\u0430\u0432\u0430\u0439", "\u0445\u043e\u0447\u0443", "\u043f\u043e\u0435\u0445\u0430\u043b\u0438", "go", "start"}
+_PRACTICE_YES = {"да", "yes", "ja", "ok", "давай", "хочу", "поехали", "go", "start"}
 
-# Fuzzy-Toleranz: max. Levenshtein-Distanz relativ zur Wortlaenge
-_FUZZY_RATIO = 0.25  # 25% der Zeichen duerfen abweichen
+_FUZZY_RATIO = 0.25
 
 
 def _levenshtein(a: str, b: str) -> int:
-    """Berechnet Levenshtein-Distanz zwischen zwei Strings."""
     if a == b:
         return 0
     if not a:
@@ -53,10 +52,8 @@ def _levenshtein(a: str, b: str) -> int:
 
 
 def _is_close_enough(answer: str, correct: str) -> tuple[bool, bool]:
-    """Gibt (exakt_korrekt, fast_korrekt) zurueck."""
     a = answer.strip().lower()
     c = correct.strip().lower()
-    # Artikel entfernen fuer Vergleich
     for art in ("der ", "die ", "das ", "ein ", "eine "):
         a = a.removeprefix(art)
         c = c.removeprefix(art)
@@ -97,35 +94,31 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await handle_admin_reply(update, context)
         return
 
-    # /skip
     if text.lower() in ("/skip", "skip"):
         await _handle_skip(update, context)
         return
 
-    # Practice laeuft
     session = get_session(context.user_data)
     if session.phase == LearningPhase.PRACTICE:
         await _handle_practice_answer(update, context, text, session)
         return
 
-    # Natasha sagt "ja" nach Lesson
     if session.phase == LearningPhase.LESSON_ACTIVE and text.lower() in _PRACTICE_YES:
         session.start_practice()
         word = session.current_practice_word()
         if word:
             await update.message.reply_text(
-                f"\U0001f525 \u041d\u0430\u0447\u0438\u043d\u0430\u0435\u043c!\n\n\u2757 *{word['word_ru']}* \u2014 \u043f\u043e-\u043d\u0435\u043c\u0435\u0446\u043a\u0438:"
-                "\n\n_(/skip \u2014 \u043f\u0440\u043e\u043f\u0443\u0441\u0442\u0438\u0442\u044c)_",
+                f"🔥 Начинаем!\n\n❗ *{word['word_ru']}* — по-немецки:"
+                "\n\n_(/skip — пропустить)_",
                 parse_mode="Markdown"
             )
         return
 
-    # Quiz laeuft
     if context.user_data.get(QUIZ_SESSION_KEY) and text in {"1", "2", "3", "4"}:
         await handle_quiz(update, context)
         return
 
-    # Normaler Chat mit Imperator
+    # --- Rollenspiel aktiv? → extra_context injizieren ---
     services        = context.bot_data.get("services", {})
     dialogue_router = services.get("dialogue_router")
     tts             = services.get("tts")
@@ -133,21 +126,35 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     user_repo       = services.get("user_repo")
 
     if not dialogue_router or not user_repo:
-        await update.message.reply_text("\u0421\u0435\u0440\u0432\u0438\u0441 \u0432\u0440\u0435\u043c\u0435\u043d\u043d\u043e \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d.")
+        await update.message.reply_text("Сервис временно недоступен.")
         return
 
     user_id = user_repo.get_or_create_user(user.id, user.first_name or "")
     await context.bot.send_chat_action(update.effective_chat.id, action="typing")
 
+    # Rollenspiel-Kontext bauen
+    extra_ctx = ""
+    current_rp = context.user_data.get("current_roleplay")
+    if current_rp:
+        is_explicit = context.user_data.get("flirt_mode", False)
+        level = user_repo.get_level(user_id) or "a1"
+        from bot.handlers.roleplay import get_rp_system_addon
+        extra_ctx = get_rp_system_addon(current_rp, level, is_explicit)
+
     try:
-        result = await dialogue_router.generate_reply(user_id=user_id, user_text=text)
+        result = await dialogue_router.generate_reply(
+            user_id=user_id,
+            user_text=text,
+            extra_context=extra_ctx,
+        )
         reply  = result["text"] if isinstance(result, dict) else str(result)
     except Exception as e:
         logger.error("DialogueRouter error: %s", e, exc_info=True)
-        reply = "\u041f\u0440\u043e\u0438\u0437\u043e\u0448\u043b\u0430 \u043e\u0448\u0438\u0431\u043a\u0430. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439 \u0435\u0449\u0451 \u0440\u0430\u0437."
+        reply = "Произошла ошибка. Попробуй ещё раз."
 
     await update.message.reply_text(reply)
 
+    # TTS für Rollenspiel-Antworten
     if tts and vp and vp.voice_id:
         try:
             await context.bot.send_chat_action(update.effective_chat.id, action="record_voice")
@@ -161,7 +168,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def _handle_practice_answer(
     update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, session
 ) -> None:
-    import random
     services       = context.bot_data.get("services", {})
     user_repo      = services.get("user_repo")
     lesson_planner = services.get("lesson_planner")
@@ -191,7 +197,6 @@ async def _handle_practice_answer(
 
     await update.message.reply_text(feedback, parse_mode="Markdown")
 
-    # Bei Typo: Wort NICHT weiterspringen
     if close and not exact:
         return
 
@@ -214,7 +219,7 @@ async def _handle_practice_answer(
 async def _handle_skip(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     session = get_session(context.user_data)
     if session.phase != LearningPhase.PRACTICE:
-        await update.message.reply_text("\u0421\u0435\u0439\u0447\u0430\u0441 \u043d\u0435\u0442 \u0430\u043a\u0442\u0438\u0432\u043d\u043e\u0433\u043e \u0443\u043f\u0440\u0430\u0436\u043d\u0435\u043d\u0438\u044f.")
+        await update.message.reply_text("Сейчас нет активного упражнения.")
         return
     done = session.advance_practice(False)
     if done:

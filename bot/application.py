@@ -37,20 +37,24 @@ async def build_application(settings: Settings, services: dict) -> Application:
     from bot.handlers.stop          import handle_stop
     from bot.handlers.support       import deactivate_support
     from bot.handlers.callbacks     import handle_callback
+    from bot.handlers.roleplay      import handle_rollenspiele, handle_bewerberin, handle_normal
     from bot.error_handler          import handle_error
 
-    app.add_handler(CommandHandler("start",      handle_start,       filters=auth_filter))
-    app.add_handler(CommandHandler("help",        handle_help,        filters=auth_filter))
-    app.add_handler(CommandHandler("lesson",      handle_lesson,      filters=auth_filter))
-    app.add_handler(CommandHandler("teacher",     handle_teacher,     filters=auth_filter))
-    app.add_handler(CommandHandler("progress",    handle_progress,    filters=auth_filter))
-    app.add_handler(CommandHandler("stats",       handle_stats,       filters=auth_filter))
-    app.add_handler(CommandHandler("setlevel",    handle_setlevel,    filters=auth_filter))
-    app.add_handler(CommandHandler("quiz",        handle_quiz,        filters=auth_filter))
-    app.add_handler(CommandHandler("pronounce",   handle_pronounce,   filters=auth_filter))
-    app.add_handler(CommandHandler("remind",      handle_remind,      filters=auth_filter))
-    app.add_handler(CommandHandler("stop",        handle_stop,        filters=auth_filter))
-    app.add_handler(CommandHandler("endsupport",  deactivate_support, filters=auth_filter))
+    app.add_handler(CommandHandler("start",        handle_start,        filters=auth_filter))
+    app.add_handler(CommandHandler("help",          handle_help,         filters=auth_filter))
+    app.add_handler(CommandHandler("lesson",        handle_lesson,       filters=auth_filter))
+    app.add_handler(CommandHandler("teacher",       handle_teacher,      filters=auth_filter))
+    app.add_handler(CommandHandler("progress",      handle_progress,     filters=auth_filter))
+    app.add_handler(CommandHandler("stats",         handle_stats,        filters=auth_filter))
+    app.add_handler(CommandHandler("setlevel",      handle_setlevel,     filters=auth_filter))
+    app.add_handler(CommandHandler("quiz",          handle_quiz,         filters=auth_filter))
+    app.add_handler(CommandHandler("pronounce",     handle_pronounce,    filters=auth_filter))
+    app.add_handler(CommandHandler("remind",        handle_remind,       filters=auth_filter))
+    app.add_handler(CommandHandler("stop",          handle_stop,         filters=auth_filter))
+    app.add_handler(CommandHandler("endsupport",    deactivate_support,  filters=auth_filter))
+    app.add_handler(CommandHandler("rollenspiele",  handle_rollenspiele, filters=auth_filter))
+    app.add_handler(CommandHandler("bewerberin",    handle_bewerberin,   filters=auth_filter))
+    app.add_handler(CommandHandler("normal",        handle_normal,       filters=auth_filter))
 
     app.add_handler(CallbackQueryHandler(handle_callback))
 
