@@ -46,14 +46,18 @@ def init_services(settings) -> dict:
 
     _run_auto_migrations(settings.database_path)
 
+    # ------------------------------------------------------------------
     # Repositories
+    # ------------------------------------------------------------------
     from db.repositories.user_repository   import UserRepository
     from db.repositories.memory_repository import MemoryRepository
 
     user_repo   = UserRepository(settings.database_path)
     memory_repo = MemoryRepository(settings.database_path)
 
+    # ------------------------------------------------------------------
     # LLM
+    # ------------------------------------------------------------------
     from services.llm.openai_provider import OpenAIProvider
     llm = OpenAIProvider(
         api_key  = settings.openai_api_key,
@@ -61,12 +65,15 @@ def init_services(settings) -> dict:
         model    = settings.llm_model,
     )
 
-    # STT — Whisper lokal, Groq als Fallback
+    # ------------------------------------------------------------------
+    # STT  (Datei: whisper_provider.py -> class WhisperLocalProvider)
+    #       (Datei: groq_provider.py   -> class GroqSTTProvider)
+    # ------------------------------------------------------------------
     stt = None
     if settings.stt_provider == "whisper_local":
         try:
-            from services.stt.whisper_provider import WhisperSTTProvider
-            stt = WhisperSTTProvider(model_size=settings.whisper_model)
+            from services.stt.whisper_provider import WhisperLocalProvider
+            stt = WhisperLocalProvider(model_size=settings.whisper_model)
             logger.info("STT: Whisper local (%s)", settings.whisper_model)
         except Exception as e:
             logger.warning("Whisper STT nicht verfuegbar: %s", e)
@@ -77,26 +84,37 @@ def init_services(settings) -> dict:
             stt = GroqSTTProvider(api_key=settings.groq_api_key)
             logger.info("STT: Groq Fallback aktiv")
         except Exception as e:
-            logger.warning("Groq STT nicht verfuegbar: %s", e)
+            logger.error("Groq STT nicht verfuegbar: %s", e)
 
+    if stt is None:
+        logger.error("KEIN STT Provider verfuegbar — Sprachnachrichten funktionieren nicht!")
+
+    # ------------------------------------------------------------------
     # TTS
+    # ------------------------------------------------------------------
     from services.tts import create_tts_provider
     tts = create_tts_provider(settings)
 
+    # ------------------------------------------------------------------
     # Voice-Pipeline
+    # ------------------------------------------------------------------
     from services.voice_pipeline import VoicePipeline
     vp = VoicePipeline(
         stt      = stt,
         tts      = tts,
         voice_id = settings.voice_id_imperator,
     )
-    logger.info("VoicePipeline: voice_id=%r", vp.voice_id)
+    logger.info("VoicePipeline: voice_id=%r, stt=%s", vp.voice_id, type(stt).__name__ if stt else "None")
 
+    # ------------------------------------------------------------------
     # Lesson-Planner
+    # ------------------------------------------------------------------
     from services.lesson_planner import LessonPlanner
     lesson_planner = LessonPlanner(db_path=settings.database_path)
 
+    # ------------------------------------------------------------------
     # Dialogue-Router
+    # ------------------------------------------------------------------
     from services.dialogue_router import DialogueRouter
     dialogue_router = DialogueRouter(
         llm_provider = llm,
@@ -104,16 +122,20 @@ def init_services(settings) -> dict:
         memory_repo  = memory_repo,
     )
 
-    # Streak
+    # ------------------------------------------------------------------
+    # Streak  (Datei: streak_service.py -> class StreakService)
+    # ------------------------------------------------------------------
     streak = None
     try:
         from services.streak_service import StreakService
         streak = StreakService(settings.database_path)
         logger.info("StreakService bereit.")
     except Exception as e:
-        logger.debug("StreakService nicht verfuegbar: %s", e)
+        logger.warning("StreakService nicht verfuegbar: %s", e)
 
-    # Sticker-Service (optional)
+    # ------------------------------------------------------------------
+    # Sticker-Service  (Datei: sticker_service.py -> class StickerService)
+    # ------------------------------------------------------------------
     sticker = None
     try:
         from services.sticker_service import StickerService
@@ -124,9 +146,12 @@ def init_services(settings) -> dict:
     except Exception as e:
         logger.debug("StickerService nicht verfuegbar: %s", e)
 
+    # ------------------------------------------------------------------
+    # Services-Dict — alles was Handler brauchen
+    # ------------------------------------------------------------------
     services = {
         "llm":             llm,
-        "stt":             stt,
+        "stt":             stt,           # direkt verfuegbar fuer voice.py
         "tts":             tts,
         "voice_pipeline":  vp,
         "user_repo":       user_repo,
