@@ -46,21 +46,12 @@ def init_services(settings) -> dict:
 
     _run_auto_migrations(settings.database_path)
 
-    # Repositories — liegen unter db/repositories/
+    # Repositories
     from db.repositories.user_repository   import UserRepository
     from db.repositories.memory_repository import MemoryRepository
 
     user_repo   = UserRepository(settings.database_path)
     memory_repo = MemoryRepository(settings.database_path)
-
-    # VocabRepository: optional — falls vorhanden nutzen, sonst None
-    vocab_repo = None
-    try:
-        from db.repositories.vocab_repository import VocabRepository
-        vocab_repo = VocabRepository(settings.database_path)
-        logger.info("VocabRepository geladen.")
-    except ImportError:
-        logger.info("Kein VocabRepository gefunden — LessonPlanner nutzt direkten DB-Zugriff.")
 
     # LLM
     from services.llm.openai_provider import OpenAIProvider
@@ -87,7 +78,7 @@ def init_services(settings) -> dict:
         except Exception as e:
             logger.warning("Groq STT nicht verfuegbar: %s", e)
 
-    # TTS — einheitlich ueber Factory
+    # TTS
     from services.tts import create_tts_provider
     tts = create_tts_provider(settings)
 
@@ -100,12 +91,9 @@ def init_services(settings) -> dict:
     )
     logger.info("VoicePipeline: voice_id=%r", vp.voice_id)
 
-    # Lesson-Planner
+    # Lesson-Planner — nimmt nur db_path
     from services.lesson_planner import LessonPlanner
-    lesson_planner = LessonPlanner(
-        db_path    = settings.database_path,
-        vocab_repo = vocab_repo,  # kann None sein
-    )
+    lesson_planner = LessonPlanner(db_path=settings.database_path)
 
     # Dialogue-Router
     from services.dialogue_router import DialogueRouter
@@ -115,7 +103,7 @@ def init_services(settings) -> dict:
         memory_repo  = memory_repo,
     )
 
-    # Streak
+    # Streak (optional)
     streak = None
     try:
         from services.streak import StreakService
@@ -130,7 +118,6 @@ def init_services(settings) -> dict:
         "voice_pipeline":  vp,
         "user_repo":       user_repo,
         "memory_repo":     memory_repo,
-        "vocab_repo":      vocab_repo,
         "lesson_planner":  lesson_planner,
         "dialogue_router": dialogue_router,
         "streak":          streak,
@@ -139,5 +126,5 @@ def init_services(settings) -> dict:
     return services
 
 
-# Alias fuer app/main.py Kompatibilitaet
+# Alias fuer app/main.py
 initialise_services = init_services
