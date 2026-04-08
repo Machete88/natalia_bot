@@ -103,13 +103,25 @@ def init_services(settings) -> dict:
         memory_repo  = memory_repo,
     )
 
-    # Streak (optional)
+    # Streak (fix: korrekte Datei streak_service.py)
     streak = None
     try:
-        from services.streak import StreakService
+        from services.streak_service import StreakService
         streak = StreakService(settings.database_path)
-    except ImportError:
-        logger.debug("StreakService nicht gefunden — ueberspringe.")
+        logger.info("StreakService bereit.")
+    except Exception as e:
+        logger.debug("StreakService nicht verfuegbar: %s", e)
+
+    # Sticker-Service (optional — braucht catalog + dir)
+    sticker = None
+    try:
+        from services.sticker_service import StickerService
+        catalog = str(Path(settings.database_path).parent.parent / "data" / "sticker_catalog.json")
+        sticker_dir = str(Path(settings.database_path).parent.parent / "media" / "stickers")
+        sticker = StickerService(catalog_path=catalog, sticker_dir=sticker_dir)
+        logger.info("StickerService bereit.")
+    except Exception as e:
+        logger.debug("StickerService nicht verfuegbar: %s", e)
 
     services = {
         "llm":             llm,
@@ -121,6 +133,7 @@ def init_services(settings) -> dict:
         "lesson_planner":  lesson_planner,
         "dialogue_router": dialogue_router,
         "streak":          streak,
+        "sticker_service": sticker,
     }
     logger.info("Services bereit: %s", list(services.keys()))
     return services
