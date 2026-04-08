@@ -57,8 +57,9 @@ def main() -> None:
                     return
                 tg_id = settings.authorized_user_id
                 uid = user_repo.get_or_create_user(int(tg_id), "")
-                teacher = user_repo.get_teacher(uid)
-                msgs = REMINDER_MESSAGES.get(teacher, REMINDER_MESSAGES["vitali"])
+                msgs = REMINDER_MESSAGES.get("imperator", [])
+                if not msgs:
+                    return
                 try:
                     await context.bot.send_message(chat_id=int(tg_id), text=random.choice(msgs))
                 except Exception as e:
